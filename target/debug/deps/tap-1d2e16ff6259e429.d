@@ -1,0 +1,8 @@
+/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libtap-1d2e16ff6259e429.rmeta: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/conv.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/pipe.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/tap.rs
+
+/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/tap-1d2e16ff6259e429.d: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/conv.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/pipe.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/tap.rs
+
+/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/lib.rs:
+/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/conv.rs:
+/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/pipe.rs:
+/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tap-1.0.1/src/tap.rs:
