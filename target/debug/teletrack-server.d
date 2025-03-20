@@ -1,1 +1,0 @@
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/teletrack-server: /Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/src/main.rs

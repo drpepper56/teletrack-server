@@ -1,9 +1,0 @@
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libsha1-73943bc86b45e830.rmeta: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress/soft.rs
-
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libsha1-73943bc86b45e830.rlib: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress/soft.rs
-
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/sha1-73943bc86b45e830.d: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress/soft.rs
-
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/lib.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/sha-1-0.10.1/src/compress/soft.rs:

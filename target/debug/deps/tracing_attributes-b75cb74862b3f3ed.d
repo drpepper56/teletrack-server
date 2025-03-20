@@ -1,7 +1,0 @@
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libtracing_attributes-b75cb74862b3f3ed.dylib: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/attr.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/expand.rs
-
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/tracing_attributes-b75cb74862b3f3ed.d: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/attr.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/expand.rs
-
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/lib.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/attr.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-attributes-0.1.28/src/expand.rs:

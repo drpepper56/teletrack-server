@@ -1,9 +1,0 @@
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libonce_cell-d47a3209b8794756.rmeta: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/imp_std.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/race.rs
-
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/libonce_cell-d47a3209b8794756.rlib: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/imp_std.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/race.rs
-
-/Users/imaginepaying1000foralaptop/Documents/projects/sandy_hook_2/bombardino_crocodilo_rustino/target/debug/deps/once_cell-d47a3209b8794756.d: /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/lib.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/imp_std.rs /Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/race.rs
-
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/lib.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/imp_std.rs:
-/Users/imaginepaying1000foralaptop/.cargo/registry/src/index.crates.io-6f17d22bba15001f/once_cell-1.21.1/src/race.rs:
