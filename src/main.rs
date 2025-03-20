@@ -127,6 +127,8 @@ async fn write_to_db_test(
     client: web::Data<Client>,
     data: web::Json<testing_data_format>,
 ) -> impl Responder {
+    println!("writing to DB");
+
     let db = client.database("testbase");
     let collection: mongodb::Collection<testing_data_format> = db.collection("test");
 
