@@ -112,9 +112,6 @@ async fn store_tracking_data(
 ) -> impl Responder {
     let db = client.database("tracking_db");
     let collection = db.collection("tracking_data");
-
-    println!("gay2");
-
     let result = collection.insert_one(data.into_inner(), None).await;
 
     match result {
@@ -130,7 +127,6 @@ async fn write_to_db_test(
     client: web::Data<Client>,
     data: web::Json<testing_data_format>,
 ) -> impl Responder {
-    println!("gay");
     let db = client.database("testbase");
     let collection: mongodb::Collection<testing_data_format> = db.collection("test");
 
@@ -152,6 +148,10 @@ async fn main() -> std::io::Result<()> {
     let mongo_uri = env::var("MONGODB_URI").expect("MONGODB_URI not set");
     let client_options = ClientOptions::parse(&mongo_uri).await.unwrap();
     let client = Client::with_options(client_options).unwrap();
+    let port: u16 = env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .expect("PORT must be a number");
 
     println!("🚀 Server running at http://127.0.0.1:8080");
 
@@ -165,7 +165,7 @@ async fn main() -> std::io::Result<()> {
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
     })
-    .bind("127.0.0.1:8080")?
+    .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
 }
