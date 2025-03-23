@@ -1,10 +1,17 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{
+    web::{self, Json},
+    App, HttpResponse, HttpServer, Responder,
+};
 use dotenv::dotenv;
-use mongodb::{options::ClientOptions, Client};
+use mongodb::{
+    bson::doc,
+    options::{ClientOptions, FindOptions},
+    Client,
+};
 use reqwest::Client as ReqwestClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{env, result};
+use std::{collections, env, result};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct TrackingData {
@@ -42,6 +49,10 @@ struct Track17Track {
 struct testing_data_format {
     key: String,
     value: String,
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct test_read_data {
+    search_key: String,
 }
 
 // async fn track_package(tracking_number: web::Path<String>) -> impl Responder {
@@ -143,6 +154,31 @@ async fn write_to_db_test(
     }
 }
 
+async fn test_read(client: web::Data<Client>, data: Json<test_read_data>) -> impl Responder {
+    let db = client.database("testbase");
+    let collection = db.collection("test");
+
+    // let filter: mongodb::bson::Document = doc! {};
+    let filter: mongodb::bson::Document = doc! {"key": data.into_inner().search_key}; // Corrected filter
+    let find_options = FindOptions::builder().limit(2).build();
+
+    let mut cursor = collection.find(filter, find_options).await;
+
+    match cursor {
+        Ok(cursor) => {
+            let mut results = Vec::new();
+            while let present = cursor.advance().await.unwrap_or(false) {
+                results.push(cursor.deserialize_current().unwrap());
+            }
+            return HttpResponse::Ok().json(results);
+        }
+        Err(e) => {
+            println!(e);
+            HttpResponse::InternalServerError().body("Failed to read data")
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
@@ -150,22 +186,19 @@ async fn main() -> std::io::Result<()> {
     let mongo_uri = env::var("MONGODB_URI").expect("MONGODB_URI not set");
     let client_options = ClientOptions::parse(&mongo_uri).await.unwrap();
     let client = Client::with_options(client_options).unwrap();
+
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
         .expect("PORT must be a number");
 
-    println!("🚀 Server running at http://127.0.0.1:8080");
-
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(client.clone()))
-            .service(web::resource("/").to(|| async {
-                println!("📡 Received request at /");
-                HttpResponse::Ok().body("Hello, World!")
-            }))
+            .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
+            .route("/test_read", web::get().to(test_read))
     })
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
