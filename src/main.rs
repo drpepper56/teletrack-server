@@ -1,4 +1,6 @@
+use actix_cors::Cors;
 use actix_web::{
+    middleware::Logger,
     web::{self, Json},
     App, HttpResponse, HttpServer, Responder,
 };
@@ -207,6 +209,24 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(client.clone()))
+            .wrap(Logger::default())
+            .wrap(
+                Cors::default()
+                    .allowed_origin("https://telegram.org") // Telegram web app origin
+                    .allowed_origin_fn(|origin, _req_head| {
+                        // Allow heroku
+                        origin
+                            .as_bytes()
+                            .starts_with(b"https://teletrack-twa-1b3480c228a6.herokuapp.com")
+                    })
+                    .allowed_methods(vec!["GET", "POST"])
+                    .allowed_headers(vec![
+                        actix_web::http::header::CONTENT_TYPE,
+                        actix_web::http::header::AUTHORIZATION,
+                    ])
+                    .supports_credentials()
+                    .max_age(3600),
+            )
             .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
@@ -217,3 +237,19 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
+
+/*
+// Add near your App initialization
+.use(actix_cors::Cors::permissive()) // For development only!
+// Or for production:
+.use(
+    Cors::default()
+        .allowed_origin("http://your-frontend-domain.com")
+        .allowed_methods(vec!["GET", "POST"])
+        .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
+        .allowed_header(header::CONTENT_TYPE)
+        .max_age(3600),
+)
+*/
+
+// https://teletrack-twa-1b3480c228a6.herokuapp.com/ deployed to Heroku
