@@ -3,6 +3,7 @@ use actix_web::{
     App, HttpResponse, HttpServer, Responder,
 };
 use dotenv::dotenv;
+use futures::stream::StreamExt;
 use mongodb::{
     bson::doc,
     options::{ClientOptions, FindOptions},
@@ -156,7 +157,7 @@ async fn write_to_db_test(
 
 async fn test_read(client: web::Data<Client>, data: Json<test_read_data>) -> impl Responder {
     let db = client.database("testbase");
-    let collection = db.collection("test");
+    let collection: mongodb::Collection<test_read_data> = db.collection("test");
 
     // let filter: mongodb::bson::Document = doc! {};
     let filter: mongodb::bson::Document = doc! {"key": data.into_inner().search_key}; // Corrected filter
@@ -167,13 +168,14 @@ async fn test_read(client: web::Data<Client>, data: Json<test_read_data>) -> imp
     match cursor {
         Ok(cursor) => {
             let mut results = Vec::new();
-            while let present = cursor.advance().await.unwrap_or(false) {
-                results.push(cursor.deserialize_current().unwrap());
+            while let Some(doc) = cursor.next().await {
+                println!("{:?}", doc);
+                results.push(doc);
             }
             return HttpResponse::Ok().json(results);
         }
         Err(e) => {
-            println!(e);
+            println!("{}", e);
             HttpResponse::InternalServerError().body("Failed to read data")
         }
     }
