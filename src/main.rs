@@ -51,10 +51,6 @@ struct testing_data_format {
     key: String,
     value: String,
 }
-#[derive(Serialize, Deserialize, Debug)]
-struct test_read_data {
-    search_key: String,
-}
 
 // async fn track_package(tracking_number: web::Path<String>) -> impl Responder {
 //     let api_key = env::var("TRACK17_API_KEY").expect("TRACK17_API_KEY not set");
@@ -155,19 +151,22 @@ async fn write_to_db_test(
     }
 }
 
-async fn test_read(client: web::Data<Client>, data: Json<test_read_data>) -> impl Responder {
+async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -> impl Responder {
+    println!("reading from DB");
+
     let db = client.database("testbase");
-    let collection: mongodb::Collection<test_read_data> = db.collection("test");
+    let collection: mongodb::Collection<testing_data_format> = db.collection("test");
 
     // let filter: mongodb::bson::Document = doc! {};
-    let filter: mongodb::bson::Document = doc! {"key": data.into_inner().search_key}; // Corrected filter
+    let filter: mongodb::bson::Document = doc! {"key": data.into_inner().key}; // Corrected filter
     let find_options = FindOptions::builder().limit(2).build();
 
-    let mut cursor = collection.find(filter, find_options).await;
+    let cursor = collection.find(filter, find_options).await;
 
     match cursor {
         Ok(mut cursor) => {
             let mut results = Vec::new();
+            println!("mayb ey ou got it?");
             while let Some(doc) = cursor.next().await {
                 match doc {
                     Ok(data) => {
@@ -203,6 +202,8 @@ async fn main() -> std::io::Result<()> {
         .parse()
         .expect("PORT must be a number");
 
+    println!("active");
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(client.clone()))
@@ -211,7 +212,8 @@ async fn main() -> std::io::Result<()> {
             .route("/store_tracking_data", web::post().to(store_tracking_data))
             .route("/test_read", web::get().to(test_read))
     })
-    .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
+    .bind(("127.0.0.1", 8080))?
+    // .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
 }
