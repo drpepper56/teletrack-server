@@ -3,7 +3,7 @@ use actix_web::{
     App, HttpResponse, HttpServer, Responder,
 };
 use dotenv::dotenv;
-use futures::stream::StreamExt;
+use futures::{stream::StreamExt, TryStreamExt};
 use mongodb::{
     bson::doc,
     options::{ClientOptions, FindOptions},
@@ -166,11 +166,20 @@ async fn test_read(client: web::Data<Client>, data: Json<test_read_data>) -> imp
     let mut cursor = collection.find(filter, find_options).await;
 
     match cursor {
-        Ok(cursor) => {
+        Ok(mut cursor) => {
             let mut results = Vec::new();
             while let Some(doc) = cursor.next().await {
-                println!("{:?}", doc);
-                results.push(doc);
+                match doc {
+                    Ok(data) => {
+                        println!("{:?}", data);
+                        results.push(data);
+                    }
+                    Err(e) => {
+                        println!("Error: {:?}", e);
+                        return HttpResponse::InternalServerError()
+                            .body("Failed to parse document");
+                    }
+                }
             }
             return HttpResponse::Ok().json(results);
         }
