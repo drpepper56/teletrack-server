@@ -2,6 +2,7 @@
     Cargo
 */
 
+use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use teloxide::prelude::*;
 use teloxide::types::*;
@@ -75,9 +76,9 @@ impl notification_service {
             "balls": "balls balls",
             "balls2": "balls balls2"
         });
-        let startapp_value = base64::encode(params.to_string());
+        let startapp_value = base64::engine::general_purpose::URL_SAFE.encode(params.to_string());
         let deep_link = format!(
-            "https://t.me/{}/{}?startapp=notification_{}",
+            "https://t.me/{}/{}?startapp={}",
             self.bot.get_me().await?.username(),
             self.mini_app_name,
             startapp_value
