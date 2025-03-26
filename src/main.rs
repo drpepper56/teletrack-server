@@ -153,15 +153,14 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
     // to what user
+    user_id: web::Path<i64>,
 ) -> impl Responder {
-    // TESTING MY USERID
-    let user_id: i64 = 6178382910;
     // access the service and deal with validation checks from the errors
     match &*data.notification_service {
         Ok(service) => {
             match service
                 .send_ma_notification(
-                    user_id,
+                    *user_id,
                     "Update on your order tracking.",
                     Some(vec![("balls", "balls balls"), ("balls2", "balls balls2")]),
                 )
