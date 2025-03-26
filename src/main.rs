@@ -149,7 +149,8 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
     }
 }
 
-// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the telegram environment and pass the data to be resolved in the mini app
+// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
+// telegram environment and pass the data to be resolved in the mini app
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
     // to what user

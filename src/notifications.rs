@@ -68,18 +68,21 @@ impl notification_service {
         params: Option<Vec<(&str, &str)>>,
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
-        let mut deep_link = format!(
+        // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
+        // they need to be all put in a json as the start parameter with the actual start parameter being the first in the json
+        let params = serde_json::json!({
+            "notification_id": Utc::now().timestamp(),
+            "balls": "balls balls",
+            "balls2": "balls balls2"
+        });
+        let startapp_value = base64::encode(params.to_string());
+        let deep_link = format!(
             "https://t.me/{}/{}?startapp=notification_{}",
             self.bot.get_me().await?.username(),
             self.mini_app_name,
-            Utc::now().timestamp()
+            startapp_value
         );
-        // add the custom parameters if they exist
-        if let Some(params) = params {
-            for (key, value) in params {
-                deep_link.push_str(&format!("&{}={}", key, encode(value)));
-            }
-        }
+
         // create the keyboard that can (and will) throw errors
         let keyboard = self.create_inline_keyboard(&deep_link)?;
         // send itttt
