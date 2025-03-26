@@ -93,6 +93,7 @@ impl notification_service {
     }
 
     // silent notification
+    // lack of keyboard here could be the cause of future errors
     pub async fn send_silent_update(&self, user_id: i64) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         let deep_link = format!(
