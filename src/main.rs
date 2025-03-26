@@ -231,8 +231,11 @@ async fn main() -> std::io::Result<()> {
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
             .route("/test_read", web::get().to(test_read))
-        // HTTPS send
-        //.route(path, route)
+            // HTTPS trigger notification TESTING TODO: route to be removed and function called by api update event
+            .route(
+                "/notify/{user_id}",
+                web::post().to(notify_of_tracking_event_update),
+            )
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
