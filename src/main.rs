@@ -1,3 +1,9 @@
+/*
+    Cargo stuff
+*/
+
+mod notifications;
+
 use actix_cors::Cors;
 use actix_web::{
     middleware::Logger,
@@ -11,10 +17,15 @@ use mongodb::{
     options::{ClientOptions, FindOptions},
     Client,
 };
+use notifications::{notification_service, notification_service_error};
 use reqwest::Client as ReqwestClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{collections, env, result};
+use std::{collections, env, result, sync::Arc};
+
+/*
+    Structs
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 struct TrackingData {
@@ -47,74 +58,21 @@ struct Track17Track {
     z: String,
 }
 
-// test
+// struct for testing connections
 #[derive(Serialize, Deserialize, Debug)]
 struct testing_data_format {
     key: String,
     value: String,
 }
 
-// async fn track_package(tracking_number: web::Path<String>) -> impl Responder {
-//     let api_key = env::var("TRACK17_API_KEY").expect("TRACK17_API_KEY not set");
-//     let url = "https://api.17track.net/track/v1/track";
+// struct for notification service in multithreading environment
+struct app_state {
+    notification_service: Arc<Result<notification_service, notification_service_error>>,
+}
 
-//     let client = ReqwestClient::new();
-//     let response = client
-//         .post(url)
-//         .header("17token", api_key)
-//         .header("Content-Type", "application/json")
-//         .json(&json!({
-//             "number": tracking_number.into_inner()
-//         }))
-//         .send()
-//         .await;
-
-//     match response {
-//         Ok(res) => {
-//             if res.status().is_success() {
-//                 let body = res.text().await.unwrap_or_else(|_| String::from(""));
-//                 println!("Response Body: {}", body);
-
-//                 match serde_json::from_str::<Track17Response>(&body) {
-//                     Ok(track17_response) => {
-//                         if track17_response.code == "200" {
-//                             if let Some(data) = track17_response.dat {
-//                                 if let Some(first_data) = data.first() {
-//                                     let tracking_data = TrackingData {
-//                                         tracking_number: first_data.no.clone(),
-//                                         status: first_data.status.clone(),
-//                                     };
-//                                     return HttpResponse::Ok().json(tracking_data);
-//                                 } else {
-//                                     return HttpResponse::NotFound().body("No tracking data found");
-//                                 }
-//                             } else {
-//                                 return HttpResponse::NotFound().body("No tracking data found");
-//                             }
-//                         } else {
-//                             return HttpResponse::InternalServerError()
-//                                 .body(format!("Track17 API error: {}", track17_response.msg));
-//                         }
-//                     }
-//                     Err(e) => {
-//                         eprintln!("Error parsing Track17 response: {:?}", e);
-//                         return HttpResponse::InternalServerError()
-//                             .body("Failed to parse tracking data");
-//                     }
-//                 }
-//             } else {
-//                 HttpResponse::InternalServerError().body(format!(
-//                     "Failed to fetch tracking data. Status: {}",
-//                     res.status()
-//                 ))
-//             }
-//         }
-//         Err(e) => {
-//             eprintln!("Error sending request: {:?}", e);
-//             HttpResponse::InternalServerError().body("Failed to fetch tracking data")
-//         }
-//     }
-// }
+/*
+    Functions
+*/
 
 async fn store_tracking_data(
     client: web::Data<Client>,
@@ -191,13 +149,44 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
     }
 }
 
+// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the telegram environment and pass the data to be resolved in the mini app
+async fn notify_of_tracking_event_update(
+    data: web::Data<app_state>,
+    // to what user
+    user_id: web::Path<i64>,
+) -> impl Responder {
+    // access the service and deal with validation checks from the errors
+    match &*data.notification_service {
+        Ok(service) => {
+            match service
+                .send_ma_notification(
+                    *user_id,
+                    "Update on your order tracking.",
+                    Some(vec![("balls", "balls balls"), ("balls2", "balls balls2")]),
+                )
+                .await
+            {
+                Ok(_) => HttpResponse::Ok().json("Notification sent successfully"),
+                Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
 
+    // MONGODB ATLAS
     let mongo_uri = env::var("MONGODB_URI").expect("MONGODB_URI not set");
     let client_options = ClientOptions::parse(&mongo_uri).await.unwrap();
     let client = Client::with_options(client_options).unwrap();
+    // NOTIFICATION SERVICE
+    let notification_service = Arc::new(notification_service::new(
+        std::env::var("TELEGRAM_BOT_TOKEN").expect("BOT_TOKEN must be set"),
+        "teletrack",
+    ));
 
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -209,6 +198,12 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(client.clone()))
+            .app_data(web::Data::new(app_state {
+                notification_service: notification_service.clone(),
+            }))
+            /*
+                CORS
+            */
             .wrap(Logger::default())
             .wrap(
                 Cors::default()
@@ -227,29 +222,20 @@ async fn main() -> std::io::Result<()> {
                     .supports_credentials()
                     .max_age(3600),
             )
+            /*
+                ROUTING
+            */
+            // test the service
             .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
+            // HTTPS receive
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
             .route("/test_read", web::get().to(test_read))
+        // HTTPS send
+        //.route(path, route)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
 }
-
-/*
-// Add near your App initialization
-.use(actix_cors::Cors::permissive()) // For development only!
-// Or for production:
-.use(
-    Cors::default()
-        .allowed_origin("http://your-frontend-domain.com")
-        .allowed_methods(vec!["GET", "POST"])
-        .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
-        .allowed_header(header::CONTENT_TYPE)
-        .max_age(3600),
-)
-*/
-
-// https://teletrack-twa-1b3480c228a6.herokuapp.com/ deployed to Heroku
