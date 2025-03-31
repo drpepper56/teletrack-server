@@ -278,25 +278,14 @@ impl tracking_client {
             .send()
             .await?;
 
-        // Clone the response body into a Bytes object
-        let body_bytes: Bytes = response.bytes().await?;
-
-        // Print the entire body to the terminal
-        println!("Response body:\n{}", String::from_utf8_lossy(&body_bytes));
-
-        // Parse the body as JSON
-        let response_data: TrackingResponse =
-            serde_json::from_slice(&body_bytes).context("Failed to parse response")?;
-
-        Ok(response_data)
         // literally hallucinated how the api response structure looks like
         // TODO: consult api docs on response format
 
-        // let response_data = response
-        //     .json::<TrackingResponse>()
-        //     .await
-        //     .context("Failed to parse response")?;
+        let response_data = response
+            .json::<TrackingResponse>()
+            .await
+            .context("Failed to parse response")?;
 
-        // Ok(response_data)
+        Ok(response_data)
     }
 }
