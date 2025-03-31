@@ -70,7 +70,7 @@ impl notification_service {
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
-        // they need to be all put in a json as the start parameter with the actual start parameter being the first in the json
+        // they need to be all put in a json and encoded and put as a string as the start parameter (can change later to sending a link to DB parameters)
         let params = serde_json::json!({
             "notification_id": Utc::now().timestamp(),
             "balls": "balls balls",

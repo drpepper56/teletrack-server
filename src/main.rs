@@ -3,6 +3,9 @@
 */
 
 mod notifications;
+mod trackingapi;
+//TODO: remove later
+// mod webhook;
 
 use actix_cors::Cors;
 use actix_web::{
@@ -22,10 +25,18 @@ use reqwest::Client as ReqwestClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections, env, result, sync::Arc};
+use trackingapi::{tracking_client, tracking_error};
 
 /*
     Structs
+    TODO: review what is redundant with trackingapi.rs
 */
+
+// struct for parameter in the main server thread
+struct app_state {
+    notification_service: Arc<Result<notification_service, notification_service_error>>,
+    tracking_client: Arc<tracking_client>,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct TrackingData {
@@ -63,11 +74,6 @@ struct Track17Track {
 struct testing_data_format {
     key: String,
     value: String,
-}
-
-// struct for notification service in multithreading environment
-struct app_state {
-    notification_service: Arc<Result<notification_service, notification_service_error>>,
 }
 
 /*
@@ -175,19 +181,50 @@ async fn notify_of_tracking_event_update(
     }
 }
 
+async fn track_single(
+    data: web::Data<app_state>,
+    tracking_number: web::Path<String>,
+) -> impl Responder {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client
+        .track_single_package(&tracking_number.into_inner())
+        .await
+    {
+        Ok(data) => {
+            println!("{}, {}", data.status, data.events[0].date);
+            HttpResponse::Ok().json(data)
+        }
+        Err(e) => {
+            eprintln!("Error tracking package: {}", e);
+            match e {
+                tracking_error::NoDataFound => {
+                    HttpResponse::NotFound().body("No tracking data found")
+                }
+                tracking_error::ReqwestError(_) => {
+                    HttpResponse::InternalServerError().body("Request error")
+                }
+            }
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
 
-    // MONGODB ATLAS
+    // MONGODB ATLAS SERVICE
     let mongo_uri = env::var("MONGODB_URI").expect("MONGODB_URI not set");
-    let client_options = ClientOptions::parse(&mongo_uri).await.unwrap();
-    let client = Client::with_options(client_options).unwrap();
+    let mongo_client_options = ClientOptions::parse(&mongo_uri).await.unwrap();
+    let mongo_client = Client::with_options(mongo_client_options).unwrap();
     // NOTIFICATION SERVICE
     let notification_service = Arc::new(notification_service::new(
         std::env::var("TELEGRAM_BOT_TOKEN").expect("BOT_TOKEN must be set"),
         "teletrack",
     ));
+    // TRACKING SERVICE
+    let tracking_client = Arc::new(tracking_client::new());
+
+    // SERVER
 
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -198,9 +235,13 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(client.clone()))
+            /*
+                THREAD PARAMETERS
+            */
+            .app_data(web::Data::new(mongo_client.clone()))
             .app_data(web::Data::new(app_state {
                 notification_service: notification_service.clone(),
+                tracking_client: tracking_client.clone(),
             }))
             /*
                 CORS
@@ -210,7 +251,7 @@ async fn main() -> std::io::Result<()> {
                 Cors::default()
                     .allowed_origin("https://telegram.org") // Telegram web app origin
                     .allowed_origin_fn(|origin, _req_head| {
-                        // Allow heroku
+                        // Allow heroku front end
                         origin
                             .as_bytes()
                             .starts_with(b"https://teletrack-twa-1b3480c228a6.herokuapp.com")
@@ -232,11 +273,13 @@ async fn main() -> std::io::Result<()> {
             .route("/write", web::post().to(write_to_db_test))
             .route("/store_tracking_data", web::post().to(store_tracking_data))
             .route("/test_read", web::get().to(test_read))
-            // HTTPS trigger notification TESTING TODO: route to be removed and function called by api update event
+            // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
                 web::post().to(notify_of_tracking_event_update),
             )
+            // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
+            .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port

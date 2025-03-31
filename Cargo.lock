@@ -2306,6 +2306,7 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-web",
+ "base64 0.22.1",
  "chrono",
  "dotenv",
  "futures",
@@ -2315,7 +2316,6 @@ dependencies = [
  "serde_json",
  "teloxide",
  "thiserror 2.0.12",
- "tokio",
  "urlencoding",
 ]
 
