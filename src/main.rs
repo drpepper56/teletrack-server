@@ -190,10 +190,7 @@ async fn track_single(
         .track_single_package(&tracking_number.into_inner())
         .await
     {
-        Ok(data) => {
-            println!("{}, {}", data.status, data.events[0].date);
-            HttpResponse::Ok().json(data)
-        }
+        Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => {
             eprintln!("Error tracking package: {}", e);
             match e {
