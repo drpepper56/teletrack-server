@@ -185,11 +185,9 @@ async fn track_single(
     data: web::Data<app_state>,
     tracking_number: web::Path<String>,
 ) -> impl Responder {
+    println!("{}", &tracking_number.into_inner());
     let tracking_client = data.tracking_client.clone();
-    match tracking_client
-        .track_single_package(&tracking_number.into_inner())
-        .await
-    {
+    match tracking_client.track_single_package("123").await {
         Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => {
             eprintln!("Error tracking package: {}", e);
