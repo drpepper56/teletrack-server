@@ -270,6 +270,7 @@ impl tracking_client {
         let response = self
             .client
             .post(&url)
+            .header("Content-Type", "application/json")
             .header("17token", &self.api_key)
             .json(&serde_json::json!({
                 "number": tracking_number
