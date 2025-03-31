@@ -272,9 +272,9 @@ impl tracking_client {
             .post(&url)
             .header("Content-Type", "application/json")
             .header("17token", &self.api_key)
-            .json(&serde_json::json!({
+            .json(&serde_json::json!([{
                 "number": tracking_number
-            }))
+            }]))
             .send()
             .await?;
 
