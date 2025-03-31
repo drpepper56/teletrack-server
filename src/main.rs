@@ -38,37 +38,6 @@ struct app_state {
     tracking_client: Arc<tracking_client>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct TrackingData {
-    tracking_number: String,
-    status: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Track17Response {
-    code: String,
-    dat: Option<Vec<Track17Data>>,
-    msg: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Track17Data {
-    e: String,
-    n: String,
-    c: String,
-    no: String,
-    status: String,
-    track: Vec<Track17Track>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Track17Track {
-    a: String,
-    c: String,
-    d: String,
-    z: String,
-}
-
 // struct for testing connections
 #[derive(Serialize, Deserialize, Debug)]
 struct testing_data_format {
@@ -79,23 +48,6 @@ struct testing_data_format {
 /*
     Functions
 */
-
-async fn store_tracking_data(
-    client: web::Data<Client>,
-    data: web::Json<TrackingData>,
-) -> impl Responder {
-    let db = client.database("tracking_db");
-    let collection = db.collection("tracking_data");
-    let result = collection.insert_one(data.into_inner(), None).await;
-
-    match result {
-        Ok(_) => HttpResponse::Ok().body("Data stored successfully"),
-        Err(e) => {
-            eprintln!("Error storing data: {:?}", e);
-            HttpResponse::InternalServerError().body("Failed to store data")
-        }
-    }
-}
 
 async fn write_to_db_test(
     client: web::Data<Client>,
@@ -265,7 +217,6 @@ async fn main() -> std::io::Result<()> {
             .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
             // HTTPS receive
             .route("/write", web::post().to(write_to_db_test))
-            .route("/store_tracking_data", web::post().to(store_tracking_data))
             .route("/test_read", web::get().to(test_read))
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(

@@ -278,6 +278,17 @@ impl tracking_client {
             .send()
             .await?;
 
+        // Check if the request was successful
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "17Track API request failed with status {}: {}",
+                status,
+                error_body
+            ));
+        }
+
         // literally hallucinated how the api response structure looks like
         // TODO: consult api docs on response format
 
