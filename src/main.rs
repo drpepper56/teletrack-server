@@ -193,13 +193,10 @@ async fn track_single(
         Ok(data) => HttpResponse::Ok().json(data),
         Err(e) => {
             eprintln!("Error tracking package: {}", e);
-            match e {
-                tracking_error::NoDataFound => {
-                    HttpResponse::NotFound().body("No tracking data found")
-                }
-                tracking_error::ReqwestError(_) => {
-                    HttpResponse::InternalServerError().body("Request error")
-                }
+            if e.to_string().contains("No tracking data found") {
+                HttpResponse::NotFound().body("No tracking data found")
+            } else {
+                HttpResponse::InternalServerError().body("Request error")
             }
         }
     }

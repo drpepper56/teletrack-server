@@ -17,4 +17,4 @@ urlencoding = "2.1"                                 # For URL-safe parameters
 chrono = "0.4"                                      # Timestamps
 thiserror = "2.0.12"                                # TODO: switch everything to anyhow
 base64 = "0.22.1"                                   # bypassing telegram limitations on parameters B)
-#anyhow = "1.0.97"                                  # eroor
+anyhow = "1.0.97"                                   # eroor
