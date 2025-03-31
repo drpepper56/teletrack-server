@@ -4,6 +4,7 @@
 
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use reqwest::{Client, Error};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -254,7 +255,6 @@ impl tracking_client {
             client: Client::new(),
             api_key: env::var("TRACK17_API_KEY")
                 .expect("TRACK17_API_KEY must be set in environment"),
-            //TODO: Maybe wrong link
             base_url: "https://api.17track.net/track/v2.2".to_string(),
         }
     }
@@ -264,9 +264,8 @@ impl tracking_client {
         // Create the body for the HTTP request since the api doesn't use a web endpoint
         // load the url, route, api key and parameters into the URL and send it
         // unpack and return the response or throw errors
-        //TODO: change route
+        //TODO: implement other routes such as register and delete
         let url = format!("{}/gettrackinfo", self.base_url);
-        println!("{}", url);
 
         let response = self
             .client
@@ -278,25 +277,25 @@ impl tracking_client {
             .send()
             .await?;
 
-        // Check if the request was successful
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "17Track API request failed with status {}: {}",
-                status,
-                error_body
-            ));
-        }
+        // Clone the response body into a Bytes object
+        let body_bytes: Bytes = response.bytes().await?;
 
+        // Print the entire body to the terminal
+        println!("Response body:\n{}", String::from_utf8_lossy(&body_bytes));
+
+        // Parse the body as JSON
+        let response_data: TrackingResponse =
+            serde_json::from_slice(&body_bytes).context("Failed to parse response")?;
+
+        Ok(response_data)
         // literally hallucinated how the api response structure looks like
         // TODO: consult api docs on response format
 
-        let response_data = response
-            .json::<TrackingResponse>()
-            .await
-            .context("Failed to parse response")?;
+        // let response_data = response
+        //     .json::<TrackingResponse>()
+        //     .await
+        //     .context("Failed to parse response")?;
 
-        Ok(response_data)
+        // Ok(response_data)
     }
 }

@@ -18,3 +18,4 @@ chrono = "0.4"                                      # Timestamps
 thiserror = "2.0.12"                                # TODO: switch everything to anyhow
 base64 = "0.22.1"                                   # bypassing telegram limitations on parameters B)
 anyhow = "1.0.97"                                   # eroor
+bytes = "1.10.1"
