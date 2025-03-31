@@ -58,7 +58,7 @@ impl tracking_client {
             api_key: env::var("TRACK17_API_KEY")
                 .expect("TRACK17_API_KEY must be set in environment"),
             //TODO: Maybe wrong link
-            base_url: "https://api.17track.net/track/v2.2/register".to_string(),
+            base_url: "https://api.17track.net/track/v2.2".to_string(),
         }
     }
 
@@ -71,7 +71,7 @@ impl tracking_client {
         // load the url, route, api key and parameters into the URL and send it
         // unpack and return the response or throw errors
         //TODO: change route
-        let url = format!("{}/gettrack", self.base_url);
+        let url = format!("{}/register", self.base_url);
         println!("{}", url);
 
         let response = self
@@ -79,7 +79,7 @@ impl tracking_client {
             .post(&url)
             .header("17token", &self.api_key)
             .json(&serde_json::json!({
-                "tracking_number": tracking_number
+                "number": tracking_number
             }))
             .send()
             .await?;
