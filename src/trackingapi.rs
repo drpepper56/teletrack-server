@@ -232,7 +232,10 @@ impl tracking_client {
     }
 
     /// track 1 package
-    pub async fn track_single_package(&self, tracking_number: &str) -> Result<TrackingResponse> {
+    pub async fn track_single_package(
+        &self,
+        tracking_number: &str,
+    ) -> Result<TrackingResponse, tracking_error> {
         // Create the body for the HTTP request since the api doesn't use a web endpoint
         // load the url, route, api key and parameters into the URL and send it
         // unpack and return the response or throw errors
@@ -253,11 +256,29 @@ impl tracking_client {
         // literally hallucinated how the api response structure looks like
         // TODO: consult api docs on response format
 
-        let response_data = response
-            .json::<TrackingResponse>()
-            .await
-            .context("Failed to parse response")?;
+        if !response.status().is_success() {
+            println!("Error: {}", response.status());
+            return Err(tracking_error::ReqwestError(Err(()).unwrap()));
+        }
 
-        Ok(response_data)
+        let body_bytes = response.bytes().await?;
+
+        // Convert to string for debugging/printing
+        if let Ok(body_str) = String::from_utf8(body_bytes.to_vec()) {
+            println!("Response body ({} bytes):\n{}", body_str.len(), body_str);
+        }
+
+        let response_data = serde_json::from_slice::<TrackingResponse>(&body_bytes)?;
+        match response_data.code {
+            0 => {
+                println!("Success: {:?}", response_data);
+                Ok(response_data)
+            }
+            1 => {
+                println!("{}: {:?}", response_data.code, response_data);
+                return Err(tracking_error::SerdeError(Err(()).unwrap()));
+            }
+            _ => Err(tracking_error::NoDataFound),
+        }
     }
 }
