@@ -11,7 +11,7 @@ use std::env;
 #[post("/webhook/17track")]
 pub async fn handle_webhook(
     data: web::Data<crate::app_state>,
-    payload: web::Json<tracking_data_webhook_update>,
+    payload: web::Json<serde_json::Value>,
 ) -> impl Responder {
     println!(
         "human written console message: webhook received, my secret key is {}",
