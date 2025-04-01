@@ -2,12 +2,11 @@
     Cargo
 */
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::Engine as _;
 use chrono::Utc;
 use teloxide::prelude::*;
 use teloxide::types::*;
 use thiserror::Error;
-use urlencoding::encode;
 
 /*
     Structs
@@ -33,7 +32,7 @@ pub enum notification_service_error {
 */
 
 impl notification_service {
-    // initalizer
+    /// initializer
     pub fn new(bot_token: String, mini_app_name: &str) -> Result<Self, notification_service_error> {
         // set the parameters and handle validation checks
         if bot_token.is_empty() || mini_app_name.is_empty() {
@@ -48,7 +47,7 @@ impl notification_service {
         })
     }
 
-    // add features to the notification banner and catch url validation errors
+    /// add features to the notification banner and catch url validation errors
     fn create_inline_keyboard(
         &self,
         url: &str,
@@ -60,23 +59,31 @@ impl notification_service {
         ]]))
     }
 
-    // notification that opens the mini app
+    /// notification that opens the mini app
     pub async fn send_ma_notification(
         &self,
         user_id: i64,
         message: &str,
         // optional parameters
-        params: Option<Vec<(&str, &str)>>,
+        params_pair: Option<Vec<(&str, &str)>>,
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
         // they need to be all put in a json and encoded and put as a string as the start parameter (can change later to sending a link to DB parameters)
-        let params = serde_json::json!({
-            "notification_id": Utc::now().timestamp(),
-            "balls": "balls balls",
-            "balls2": "balls balls2"
-        });
-        let startapp_value = base64::engine::general_purpose::URL_SAFE.encode(params.to_string());
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "notification_id".to_string(),
+            serde_json::json!(Utc::now().timestamp()),
+        );
+
+        if let Some(params_pair) = params_pair {
+            for (key, value) in params_pair {
+                map.insert(key.to_string(), serde_json::json!(value));
+            }
+        }
+
+        let startapp_value = base64::engine::general_purpose::URL_SAFE
+            .encode(serde_json::Value::Object(map).to_string());
         let deep_link = format!(
             "https://t.me/{}/{}?startapp={}",
             self.bot.get_me().await?.username(),

@@ -2,10 +2,11 @@
     Cargo stuff
 */
 
+mod my_structs;
 mod notifications;
 mod trackingapi;
 //TODO: remove later
-// mod webhook;
+mod webhook;
 
 use actix_cors::Cors;
 use actix_web::{
@@ -29,16 +30,17 @@ use trackingapi::{tracking_client, tracking_error};
 
 /*
     Structs
-    TODO: review what is redundant with trackingapi.rs
+    TODO:
 */
 
-// struct for parameter in the main server thread
+/// struct for parameter in the main server thread
 struct app_state {
     notification_service: Arc<Result<notification_service, notification_service_error>>,
     tracking_client: Arc<tracking_client>,
+    webhook_secret: String,
 }
 
-// struct for testing connections
+/// struct for testing connections
 #[derive(Serialize, Deserialize, Debug)]
 struct testing_data_format {
     key: String,
@@ -47,6 +49,7 @@ struct testing_data_format {
 
 /*
     Functions
+    TODO: function
 */
 
 async fn write_to_db_test(
@@ -107,11 +110,11 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
     }
 }
 
-// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
-// telegram environment and pass the data to be resolved in the mini app
+/// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
+/// telegram environment and pass the data to be resolved in the mini app
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
-    // to what user
+    // to what user //TODO: verify to which user using database
     user_id: web::Path<i64>,
 ) -> impl Responder {
     // access the service and deal with validation checks from the errors
@@ -121,7 +124,10 @@ async fn notify_of_tracking_event_update(
                 .send_ma_notification(
                     *user_id,
                     "Update on your order tracking.",
-                    Some(vec![("balls", "balls balls"), ("balls2", "balls balls2")]),
+                    Some(vec![
+                        ("balls", "new new params"),
+                        ("balls2", "properly handled"),
+                    ]),
                 )
                 .await
             {
@@ -189,6 +195,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(app_state {
                 notification_service: notification_service.clone(),
                 tracking_client: tracking_client.clone(),
+                webhook_secret: env::var("WEBHOOK_SECRET").expect("WEBHOOK_SECRET must be set"),
             }))
             /*
                 CORS
@@ -226,6 +233,8 @@ async fn main() -> std::io::Result<()> {
             )
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
+            // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
+            .service(webhook::handle_webhook)
     })
     .bind(("127.0.0.1", 8080))?
     // .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port

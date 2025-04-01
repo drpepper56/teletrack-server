@@ -1,66 +1,44 @@
+use crate::my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as tracking_data_webhook_update;
 use actix_web::{post, web, HttpResponse, Responder};
 use chrono::Utc;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::env;
 
-// Webhook payload structure from 17Track
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TrackingUpdate {
-    pub tracking_number: String,
-    pub status: String,
-    pub events: Vec<Event>,
-    pub timestamp: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Event {
-    pub event_time: String,
-    pub location: String,
-    pub status_description: String,
-}
-
-// Webhook verification structure
-#[derive(Debug, Serialize, Deserialize)]
-struct WebhookVerification {
-    challenge: String,
-}
-
-// App State for shared data
-pub struct AppState {
-    pub webhook_secret: String,
-}
-
 #[post("/webhook/17track")]
 pub async fn handle_webhook(
-    data: web::Data<AppState>,
-    payload: web::Json<TrackingUpdate>,
+    data: web::Data<crate::app_state>,
+    payload: web::Json<tracking_data_webhook_update>,
 ) -> impl Responder {
-    info!("Received tracking update for: {}", payload.tracking_number);
+    info!("Received tracking update from 17track webhook");
+
+    // print the whole boomboclat thing
+    info!("Full Webhook Payload: {:?}", payload);
 
     // Here you would:
-    // 1. Verify the webhook signature (if using)
+    // 1. Verify the webhook signature (if using) - skipped for now
     // 2. Process the tracking update
     // 3. Store in database or trigger actions
 
-    // Example processing:
-    let latest_event = payload.events.last().map(|e| &e.status_description);
-    info!("Latest status: {:?}", latest_event);
-
     HttpResponse::Ok().json(serde_json::json!({
         "status": "processed",
-        "tracking_number": payload.tracking_number,
         "processed_at": Utc::now().timestamp()
     }))
 }
 
-#[post("/webhook/17track/verify")]
-pub async fn verify_webhook(
-    data: web::Data<AppState>,
-    challenge: web::Json<WebhookVerification>,
-) -> impl Responder {
-    info!("Received webhook verification challenge");
-    HttpResponse::Ok().json(serde_json::json!({
-        "challenge": challenge.challenge
-    }))
-}
+// #[post("/webhook/17track/verify")]
+// pub async fn verify_webhook(
+//     data: web::Data<AppState>,
+//     challenge: web::Json<WebhookVerification>,
+// ) -> impl Responder {
+//     info!("Received webhook verification challenge");
+//     HttpResponse::Ok().json(serde_json::json!({
+//         "challenge": challenge.challenge
+//     }))
+// }
+
+// // Webhook verification structure
+// #[derive(Debug, Serialize, Deserialize)]
+// struct WebhookVerification {
+//     challenge: String,
+// }
