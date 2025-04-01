@@ -1,4 +1,7 @@
-use crate::my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as tracking_data_webhook_update;
+use crate::{
+    app_state,
+    my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as tracking_data_webhook_update,
+};
 use actix_web::{post, web, HttpResponse, Responder};
 use chrono::Utc;
 use log::{error, info};
@@ -10,10 +13,13 @@ pub async fn handle_webhook(
     data: web::Data<crate::app_state>,
     payload: web::Json<tracking_data_webhook_update>,
 ) -> impl Responder {
-    info!("Received tracking update from 17track webhook");
+    println!(
+        "human written console message: webhook received, my secret key is {}",
+        data.webhook_secret
+    );
 
     // print the whole boomboclat thing
-    info!("Full Webhook Payload: {:?}", payload);
+    println!("Full Webhook Payload: {:?}", payload);
 
     // Here you would:
     // 1. Verify the webhook signature (if using) - skipped for now
