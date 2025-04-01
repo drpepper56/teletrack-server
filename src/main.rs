@@ -223,6 +223,8 @@ async fn main() -> std::io::Result<()> {
             */
             // test the service
             .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
+            // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
+            .service(webhook::handle_webhook)
             // HTTPS receive
             .route("/write", web::post().to(write_to_db_test))
             .route("/test_read", web::get().to(test_read))
@@ -233,8 +235,6 @@ async fn main() -> std::io::Result<()> {
             )
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
-            // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
-            .service(webhook::handle_webhook)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
