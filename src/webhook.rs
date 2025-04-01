@@ -1,4 +1,4 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{post, web, HttpResponse, Responder};
 use chrono::Utc;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
@@ -28,11 +28,11 @@ struct WebhookVerification {
 
 // App State for shared data
 pub struct AppState {
-    webhook_secret: String,
+    pub webhook_secret: String,
 }
 
 #[post("/webhook/17track")]
-async fn handle_webhook(
+pub async fn handle_webhook(
     data: web::Data<AppState>,
     payload: web::Json<TrackingUpdate>,
 ) -> impl Responder {
@@ -55,7 +55,7 @@ async fn handle_webhook(
 }
 
 #[post("/webhook/17track/verify")]
-async fn verify_webhook(
+pub async fn verify_webhook(
     data: web::Data<AppState>,
     challenge: web::Json<WebhookVerification>,
 ) -> impl Responder {
@@ -63,23 +63,4 @@ async fn verify_webhook(
     HttpResponse::Ok().json(serde_json::json!({
         "challenge": challenge.challenge
     }))
-}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::init();
-
-    let webhook_secret = env::var("WEBHOOK_SECRET").unwrap_or_default();
-
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(AppState {
-                webhook_secret: webhook_secret.clone(),
-            }))
-            .service(handle_webhook)
-            .service(verify_webhook)
-    })
-    .bind("0.0.0.0:8080")?
-    .run()
-    .await
 }

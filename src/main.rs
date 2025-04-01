@@ -138,6 +138,7 @@ async fn track_single(
     tracking_number: web::Path<String>,
 ) -> impl Responder {
     let tracking_client = data.tracking_client.clone();
+    //TODO: implement logic for notifying the right user of the update on their package
     match tracking_client
         .track_single_package(&tracking_number.into_inner())
         .await
@@ -226,8 +227,8 @@ async fn main() -> std::io::Result<()> {
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
-    // .bind(("127.0.0.1", 8080))?
-    .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
+    .bind(("127.0.0.1", 8080))?
+    // .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
 }

@@ -2,39 +2,12 @@
     Cargo Stuff
 */
 
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use reqwest::{Client, Error};
-use serde::{Deserialize, Serialize};
+use reqwest::Client;
 use std::env;
 use tracking_response_structs::TrackingResponse;
 
 /*
     Structs
-*/
-
-// source: made up
-/*
-#[derive(Debug, Serialize, Deserialize)]
-pub struct tracking_event {
-    pub date: String,
-    pub location: String,
-    pub description: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct api_response {
-    data: Vec<tracking_data>,
-}
-
-// API Response Structures
-#[derive(Debug, Serialize, Deserialize)]
-pub struct tracking_data {
-    pub tracking_number: String,
-    pub status: String,
-    pub events: Vec<tracking_event>,
-}
 */
 
 // error messages
@@ -55,13 +28,7 @@ pub struct tracking_client {
     base_url: String,
 }
 
-/*
-
-
-
-
-*/
-
+// structs for parsing the API response
 pub mod tracking_response_structs {
     use serde::{Deserialize, Serialize};
 
@@ -73,8 +40,8 @@ pub mod tracking_response_structs {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct ResponseData {
-        pub accepted: Vec<AcceptedPackage>,
-        pub rejected: Vec<()>, // Empty array in the example
+        pub accepted: Option<Vec<AcceptedPackage>>,
+        pub rejected: Option<Vec<RejectedPackage>>, // Empty array in the example
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -88,7 +55,8 @@ pub mod tracking_response_structs {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct TrackInfo {
-        pub last_gather_time: String, // Consider using chrono::DateTime if you need to work with dates
+        // here was the problem that took a whole day
+        pub lastGatherTime: String,
         pub shipping_info: ShippingInfo,
         pub latest_status: Status,
         pub latest_event: Event,
@@ -106,7 +74,7 @@ pub mod tracking_response_structs {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct Address {
-        pub country: String,
+        pub country: Option<String>,
         pub state: Option<String>,
         pub city: Option<String>,
         pub street: Option<String>,
@@ -211,17 +179,28 @@ pub mod tracking_response_structs {
         pub homepage: String,
         pub country: String,
     }
+
+    // Rejected
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct RejectedPackage {
+        pub number: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct RejectedError {
+        code: i32,
+        message: String,
+    }
 }
 
 /*
 
-
-    Functions
-
+    FUNctions
 
 */
 
 impl tracking_client {
+    /// initializer
     pub fn new() -> Self {
         tracking_client {
             client: Client::new(),
@@ -231,6 +210,7 @@ impl tracking_client {
         }
     }
 
+    //TODO: implement other routes such as register and delete
     /// track 1 package
     pub async fn track_single_package(
         &self,
@@ -238,8 +218,6 @@ impl tracking_client {
     ) -> Result<TrackingResponse, tracking_error> {
         // Create the body for the HTTP request since the api doesn't use a web endpoint
         // load the url, route, api key and parameters into the URL and send it
-        // unpack and return the response or throw errors
-        //TODO: implement other routes such as register and delete
         let url = format!("{}/gettrackinfo", self.base_url);
 
         let response = self
@@ -253,31 +231,35 @@ impl tracking_client {
             .send()
             .await?;
 
-        // literally hallucinated how the api response structure looks like
-        // TODO: consult api docs on response format
-
         if !response.status().is_success() {
             println!("Error: {}", response.status());
             return Err(tracking_error::ReqwestError(Err(()).unwrap()));
         }
 
+        // for debugging, print the whole body of the response in the terminal
         let body_bytes = response.bytes().await?;
+        /*
+            // Convert to string for debugging/printing
+            if let Ok(body_str) = String::from_utf8(body_bytes.to_vec()) {
+                println!("Response body ({} bytes):\n{}", body_str.len(), body_str);
+            }
+        */
 
-        // Convert to string for debugging/printing
-        if let Ok(body_str) = String::from_utf8(body_bytes.to_vec()) {
-            println!("Response body ({} bytes):\n{}", body_str.len(), body_str);
-        }
-
+        // Parse the json of the response into the structures created with the 17track api docs
+        // and return the @TrackingResponse instance
         let response_data = serde_json::from_slice::<TrackingResponse>(&body_bytes)?;
         match response_data.code {
+            // success
             0 => {
                 println!("Success: {:?}", response_data);
                 Ok(response_data)
             }
+            // error
             1 => {
                 println!("{}: {:?}", response_data.code, response_data);
                 return Err(tracking_error::SerdeError(Err(()).unwrap()));
             }
+            // unexpected error
             _ => Err(tracking_error::NoDataFound),
         }
     }
