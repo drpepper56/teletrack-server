@@ -236,8 +236,8 @@ async fn main() -> std::io::Result<()> {
             // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
             .service(webhook::handle_webhook)
     })
-    .bind(("127.0.0.1", 8080))?
-    // .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
+    // .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
 }
