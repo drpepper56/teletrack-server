@@ -5,7 +5,7 @@
 mod my_structs;
 mod notifications;
 mod trackingapi;
-//TODO: remove later
+//TODO: CHANGE THE WEBHOOK.LEMONCARDBOARD.UK ROOT TO SOMETHING BETTER THAN WEBHOOK (LIKE TELETRACK)
 mod webhook;
 
 use actix_cors::Cors;
