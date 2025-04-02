@@ -6,13 +6,13 @@ mod my_structs;
 mod notifications;
 mod trackingapi;
 //TODO: remove later
-// mod webhook;
+mod webhook;
 
 use actix_cors::Cors;
 use actix_web::{
     middleware::Logger,
     web::{self, Json},
-    App, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, HttpResponse, HttpServer, Responder,
 };
 use dotenv::dotenv;
 use futures::{stream::StreamExt, TryStreamExt};
@@ -161,45 +161,6 @@ async fn track_single(
     }
 }
 
-// webhook for updates
-
-#[derive(thiserror::Error, Debug)]
-pub enum webhook_error {
-    #[error("Serde error: {0}")]
-    SerdeError(#[from] serde_json::Error),
-}
-
-#[actix_web::post("/webhook_17track")]
-pub async fn handle_webhook(
-    data: web::Data<crate::app_state>,
-    request: HttpRequest,
-    payload: web::Json<serde_json::Value>,
-) -> impl Responder {
-    println!(
-        "human written console message: webhook received, my secret key is {}",
-        data.webhook_secret
-    );
-
-    println!("Received headers:");
-    for (name, value) in request.headers().iter() {
-        println!("  {}: {:?}", name, value);
-    }
-
-    // print the whole boomboclat thing
-    println!("Full Webhook Payload: {:?}", payload);
-
-    // Here you would:
-    // 1. Verify the webhook signature (if using) - skipped for now
-    // 2. Process the tracking update
-    // 3. Store in database or trigger actions
-    HttpResponse::Ok().body("OK")
-    // Process the payload generically
-    // HttpResponse::Ok().json(serde_json::json!({
-    //     "status": "processed",
-    //     "processed_at": chrono::Utc::now().timestamp()
-    // }))
-}
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
@@ -263,7 +224,7 @@ async fn main() -> std::io::Result<()> {
             // test the service
             .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
             // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
-            .service(handle_webhook)
+            .service(webhook::handle_webhook)
             // HTTPS receive
             .route("/write", web::post().to(write_to_db_test))
             .route("/test_read", web::get().to(test_read))
@@ -275,7 +236,7 @@ async fn main() -> std::io::Result<()> {
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
-    // .bind(("127.0.0.1", port))?
+    // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
