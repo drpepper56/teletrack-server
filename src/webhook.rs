@@ -17,7 +17,7 @@ pub enum webhook_error {
     SerdeError(#[from] serde_json::Error),
 }
 
-#[post("/webhook/17track")]
+#[post("/webhook_17track")]
 pub async fn handle_webhook(
     data: web::Data<crate::app_state>,
     request: HttpRequest,
