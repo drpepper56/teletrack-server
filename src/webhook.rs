@@ -40,7 +40,10 @@ pub async fn handle_webhook(
     // 1. Verify the webhook signature (if using) - skipped for now
     // 2. Process the tracking update
     // 3. Store in database or trigger actions
-    HttpResponse::Ok().finish()
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "processed",
+        "processed_at": chrono::Utc::now().timestamp()
+    }))
     // Process the payload generically
     // HttpResponse::Ok().json(serde_json::json!({
     //     "status": "processed",
