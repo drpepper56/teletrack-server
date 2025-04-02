@@ -236,7 +236,7 @@ async fn main() -> std::io::Result<()> {
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
-    // .bind(("127.0.0.1", 8080))?
+    // .bind(("127.0.0.1", port))?
     .bind(("0.0.0.0", port))? // Bind to all interfaces and the dynamic port
     .run()
     .await
