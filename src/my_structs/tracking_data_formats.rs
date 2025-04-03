@@ -188,24 +188,29 @@ pub mod tracking_data_get_info {
 
 */
 
-/* //TODO: add handling for the second format
-    {
-        "event": "TRACKING_STOPPED",
-        "data": {
-            "number": "RR123456789CN",
-            "carrier": 3011,
-            "param": null,
-            "tag": ""
-        }
-    }
-*/
 pub mod tracking_data_webhook_update {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct TrackingResponse {
         pub event: String,
-        pub data: PackageData,
+        pub data: TrackingData,
+    }
+
+    /// either one of the events try to deserialize
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(untagged)]
+    pub enum TrackingData {
+        PackageData(PackageData),
+        TrackingStopped(TrackingStopped),
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct TrackingStopped {
+        number: String,
+        carrier: i32,
+        param: Option<()>,
+        tag: String,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -221,7 +226,7 @@ pub mod tracking_data_webhook_update {
     pub struct TrackInfo {
         // here was the problem that took a whole day,
         // and there will be even more, the docs are inconsistent between the example response of gettrackinfo and the update message
-        pub lastGatherTime: Option<String>, //TODO: check if throwing errors
+        pub lastGatherTime: String, //TODO: check if throwing errors
         pub shipping_info: ShippingInfo,
         pub latest_status: Status,
         pub latest_event: Event,

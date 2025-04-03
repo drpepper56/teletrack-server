@@ -12,17 +12,17 @@ use actix_cors::Cors;
 use actix_web::{
     middleware::Logger,
     web::{self, Json},
-    App, HttpResponse, HttpServer, Responder,
+    App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use dotenv::dotenv;
-use futures::{stream::StreamExt, TryStreamExt};
+use futures::{stream::StreamExt, stream::TryStreamExt};
 use mongodb::{
     bson::doc,
     options::{ClientOptions, FindOptions},
     Client,
 };
 use notifications::{notification_service, notification_service_error};
-use reqwest::Client as ReqwestClient;
+use reqwest::{Client as ReqwestClient, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections, env, result, sync::Arc};
@@ -40,6 +40,29 @@ struct app_state {
     webhook_secret: String,
 }
 
+/// User structure
+#[derive(Debug, Deserialize, Serialize)]
+struct user {
+    user_id: String,
+    user_id_hash: String,
+    user_name: String,
+}
+
+/// ERORRS
+#[derive(Debug, thiserror::Error)]
+pub enum user_check_error {
+    #[error("head invalid")]
+    InvalidHeader,
+    #[error("no head?")]
+    MissingHeader,
+    #[error("user not found in database")]
+    UserNotFound,
+    #[error("database error: {0}")]
+    DatabaseError(#[from] mongodb::error::Error),
+    #[error("the user you are trying to create already exists")]
+    UserAlreadyExists,
+}
+
 /// struct for testing connections
 #[derive(Serialize, Deserialize, Debug)]
 struct testing_data_format {
@@ -52,10 +75,85 @@ struct testing_data_format {
     TODO: function
 */
 
+/// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
+/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user, the server will then send a silent
+/// notification to confirm with the app that the user was created and then process the original request
+/// INCASE the userID hash exists on the database anything to do with saving tracking history or sending addressed notifications should proceed with the raw userID
+async fn check_user_exists(
+    client: web::Data<Client>,
+    request: HttpRequest,
+) -> Result<String, user_check_error> {
+    // open the head and try to get the relevant value that should be there
+    let user_id_hash = match request.headers().get("User-ID-Hash") {
+        Some(header) => match header.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                println!("invalid header");
+                return Err(user_check_error::InvalidHeader);
+            }
+        },
+        None => {
+            println!("no hhead?");
+            return Err(user_check_error::MissingHeader);
+        }
+    };
+
+    println!("verifying user now...");
+    // chose the right database and collection
+    let db = client.database("teletrack");
+    let collection: mongodb::Collection<user> = db.collection("users");
+
+    // search for the userid hash and return the actual ID if found, send errors otherwise
+    let filter = doc! {"user_id_hash": user_id_hash};
+    match collection.find_one(filter, None).await {
+        Ok(Some(user)) => {
+            println!("user found: {:?}", user);
+            Ok(user.user_id) // Return the user ID as hex string
+        }
+        Ok(None) => {
+            println!("user not found");
+            Err(user_check_error::UserNotFound)
+        }
+        Err(e) => {
+            eprintln!("mongodb not goated: {}", e);
+            Err(user_check_error::DatabaseError(e))
+        }
+    }
+}
+
+// async fn create_user(
+//     client: web::Data<Client>,
+//     user_id: String,
+//     user_name: String,
+// ) -> impl Responder {
+//      println!("creating user now...");
+// }
+
 async fn write_to_db_test(
     client: web::Data<Client>,
     data: web::Json<testing_data_format>,
+    request: HttpRequest,
 ) -> impl Responder {
+    // check if user exists
+    match check_user_exists(client.clone(), request).await {
+        // user exists, continue
+        Ok(user_id) => {
+            //TODO: we got him
+            println!("{}", user_id)
+        }
+        // user doesn't exist, respond with 520
+        Err(user_check_error::UserNotFound) => {
+            HttpResponse::build(
+                StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .body("user doesn't yet exist");
+        }
+        // some other error
+        Err(e) => {
+            println!("errur: {}", e);
+            HttpResponse::InternalServerError().body(e.to_string());
+        }
+    }
     println!("writing to DB");
 
     let db = client.database("testbase");
@@ -178,7 +276,6 @@ async fn main() -> std::io::Result<()> {
     let tracking_client = Arc::new(tracking_client::new());
 
     // SERVER
-
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
@@ -214,6 +311,8 @@ async fn main() -> std::io::Result<()> {
                     .allowed_headers(vec![
                         actix_web::http::header::CONTENT_TYPE,
                         actix_web::http::header::AUTHORIZATION,
+                        // user id hash header for handling users
+                        actix_web::http::header::HeaderName::from_static("User-ID-Hash"),
                     ])
                     .supports_credentials()
                     .max_age(3600),
