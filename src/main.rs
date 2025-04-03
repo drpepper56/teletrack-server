@@ -312,7 +312,7 @@ async fn main() -> std::io::Result<()> {
                         actix_web::http::header::CONTENT_TYPE,
                         actix_web::http::header::AUTHORIZATION,
                         // user id hash header for handling users
-                        actix_web::http::header::HeaderName::from_static("User-ID-Hash"),
+                        // actix_web::http::header::HeaderName::from_static("User-ID-Hash"),
                     ])
                     .supports_credentials()
                     .max_age(3600),
@@ -336,8 +336,8 @@ async fn main() -> std::io::Result<()> {
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
-    .bind(("127.0.0.1", 8080))?
-    // .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
+    // .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
     .run()
     .await
 }
