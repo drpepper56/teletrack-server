@@ -84,9 +84,12 @@ async fn check_user_exists(
     request: HttpRequest,
 ) -> Result<String, user_check_error> {
     // open the head and try to get the relevant value that should be there
-    let user_id_hash = match request.headers().get("Authorization") {
+    let user_id_hash = match request.headers().get("X-User-ID-Hash") {
         Some(header) => match header.to_str() {
-            Ok(s) => s.to_string(),
+            Ok(s) => {
+                println!("{}", s);
+                s.to_string()
+            }
             Err(_) => {
                 println!("invalid header");
                 return Err(user_check_error::InvalidHeader);
