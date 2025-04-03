@@ -303,6 +303,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin("https://telegram.org") // Telegram web app origin
+                    .allowed_origin("https://webhook.lemoncardboard.uk")
                     .allowed_origin("https://teletrack-twa-1b3480c228a6.herokuapp.com") // Heroku origin
                     .allowed_origin_fn(|origin, _req_head| {
                         // Allow heroku front end
@@ -311,12 +312,8 @@ async fn main() -> std::io::Result<()> {
                             .starts_with(b"https://teletrack-twa-1b3480c228a6.herokuapp.com")
                     })
                     .allowed_methods(vec!["GET", "POST", "OPTIONS"])
-                    .allowed_headers(vec![
-                        actix_web::http::header::CONTENT_TYPE,
-                        actix_web::http::header::AUTHORIZATION,
-                        // user id hash header for handling users
-                        // actix_web::http::header::HeaderName::from_static("User-ID-Hash"),
-                    ])
+                    .allowed_headers(vec!["*"])
+                    .expose_headers(vec!["X-User-ID-Hash"])
                     .supports_credentials()
                     .max_age(3600),
             )
@@ -339,7 +336,7 @@ async fn main() -> std::io::Result<()> {
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
     })
-    // .bind(("127.0.0.1", port))?
+    // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
     .run()
     .await
