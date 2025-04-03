@@ -84,7 +84,7 @@ async fn check_user_exists(
     request: HttpRequest,
 ) -> Result<String, user_check_error> {
     // open the head and try to get the relevant value that should be there
-    let user_id_hash = match request.headers().get("User-ID-Hash") {
+    let user_id_hash = match request.headers().get("Authorization") {
         Some(header) => match header.to_str() {
             Ok(s) => s.to_string(),
             Err(_) => {
@@ -139,33 +139,35 @@ async fn write_to_db_test(
         // user exists, continue
         Ok(user_id) => {
             //TODO: we got him
-            println!("{}", user_id)
+            println!("{}", user_id);
+
+            println!("writing to DB");
+
+            let db = client.database("testbase");
+            let collection: mongodb::Collection<testing_data_format> = db.collection("test");
+
+            let result = collection.insert_one(data.into_inner(), None).await;
+
+            match result {
+                Ok(_) => HttpResponse::Ok().body("write good"),
+                Err(e) => {
+                    eprintln!("write bad: {:?}", e);
+                    HttpResponse::InternalServerError().body("Failed to store data")
+                }
+            }
         }
         // user doesn't exist, respond with 520
         Err(user_check_error::UserNotFound) => {
+            println!("user not found");
             HttpResponse::build(
                 StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
-            .body("user doesn't yet exist");
+            .body("user doesn't yet exist")
         }
         // some other error
         Err(e) => {
             println!("errur: {}", e);
-            HttpResponse::InternalServerError().body(e.to_string());
-        }
-    }
-    println!("writing to DB");
-
-    let db = client.database("testbase");
-    let collection: mongodb::Collection<testing_data_format> = db.collection("test");
-
-    let result = collection.insert_one(data.into_inner(), None).await;
-
-    match result {
-        Ok(_) => HttpResponse::Ok().body("write good"),
-        Err(e) => {
-            eprintln!("write bad: {:?}", e);
-            HttpResponse::InternalServerError().body("Failed to store data")
+            HttpResponse::InternalServerError().body(e.to_string())
         }
     }
 }
