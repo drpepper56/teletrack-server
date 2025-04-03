@@ -158,7 +158,7 @@ async fn write_to_db_test(
         }
         // user doesn't exist, respond with 520
         Err(user_check_error::UserNotFound) => {
-            println!("user not found");
+            // println!("user not found");
             HttpResponse::build(
                 StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
@@ -303,14 +303,14 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 Cors::default()
                     .allowed_origin("https://telegram.org") // Telegram web app origin
-                    .allowed_origin("https://teletrack-twa-1b3480c228a6.herokuapp.com")
+                    .allowed_origin("https://teletrack-twa-1b3480c228a6.herokuapp.com") // Heroku origin
                     .allowed_origin_fn(|origin, _req_head| {
                         // Allow heroku front end
                         origin
                             .as_bytes()
                             .starts_with(b"https://teletrack-twa-1b3480c228a6.herokuapp.com")
                     })
-                    .allowed_methods(vec!["GET", "POST"])
+                    .allowed_methods(vec!["GET", "POST", "OPTIONS"])
                     .allowed_headers(vec![
                         actix_web::http::header::CONTENT_TYPE,
                         actix_web::http::header::AUTHORIZATION,
