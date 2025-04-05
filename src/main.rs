@@ -138,6 +138,13 @@ async fn check_user_exists(
 //      println!("creating user now...");
 // }
 
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    ROUTING HANDLERS
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
 async fn write_to_db_test(
     client: web::Data<Client>,
     data: web::Json<testing_data_format>,
@@ -171,7 +178,7 @@ async fn write_to_db_test(
             HttpResponse::build(
                 StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
-            .body("user doesn't yet exist")
+            .json(serde_json::json!({"expected error": "user doesn't exist yet"}))
         }
         // some other error
         Err(e) => {
@@ -272,7 +279,7 @@ async fn track_single(
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    PREFLIGHT OPTIONS HANDLERS
+    PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -370,8 +377,8 @@ async fn main() -> std::io::Result<()> {
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
     })
-    // .bind(("127.0.0.1", 8080))?
-    .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
+    .bind(("127.0.0.1", 8080))?
+    // .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
     .run()
     .await
 }
