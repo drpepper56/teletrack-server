@@ -379,7 +379,7 @@ async fn main() -> std::io::Result<()> {
             .service(write_options)
     })
     // .bind(("127.0.0.1", 8080))?
-    .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
+    .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
     .run()
     .await
 }
