@@ -11,6 +11,7 @@ mod webhook;
 use actix_cors::Cors;
 use actix_web::{
     middleware::Logger,
+    options,
     web::{self, Json},
     App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
@@ -29,8 +30,11 @@ use std::{collections, env, result, sync::Arc};
 use trackingapi::{tracking_client, tracking_error};
 
 /*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     Structs
     TODO:
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
 /// struct for parameter in the main server thread
@@ -71,8 +75,10 @@ struct testing_data_format {
 }
 
 /*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     Functions
     TODO: function
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
 /// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
@@ -264,6 +270,35 @@ async fn track_single(
     }
 }
 
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    PREFLIGHT OPTIONS HANDLERS
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+#[options("/write")]
+async fn write_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    MAiN
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
@@ -332,6 +367,8 @@ async fn main() -> std::io::Result<()> {
             )
             // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
             .route("/track_one/{tracking_number}", web::get().to(track_single))
+            // HTTPS preflight OPTIONS for test_write
+            .service(write_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // Bxind to all interfaces and the dynamic port
