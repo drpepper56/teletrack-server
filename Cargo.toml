@@ -19,3 +19,5 @@ thiserror = "2.0.12"                                # bestest error
 base64 = "0.22.1"                                   # bypassing telegram limitations on parameters B)
 bytes = "1.10.1"
 log = "0.4.27"
+sha2 = "0.10"                                       # rustino hashysh
+hex = "0.4.3"                                       # rustino hex

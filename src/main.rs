@@ -17,6 +17,7 @@ use actix_web::{
 };
 use dotenv::dotenv;
 use futures::{stream::StreamExt, stream::TryStreamExt};
+use hex::encode;
 use mongodb::{
     bson::doc,
     options::{ClientOptions, FindOptions},
@@ -26,6 +27,7 @@ use notifications::{notification_service, notification_service_error};
 use reqwest::{Client as ReqwestClient, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::{collections, env, result, sync::Arc};
 use trackingapi::{tracking_client, tracking_error};
 
@@ -73,6 +75,13 @@ struct testing_data_format {
     value: String,
 }
 
+// struct for getting user details from the backend
+#[derive(Serialize, Deserialize, Debug)]
+struct user_details {
+    user_id: String,
+    user_name: String,
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     UTILITY FUNCTIONS
@@ -81,8 +90,7 @@ struct testing_data_format {
 */
 
 /// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
-/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user, the server will then send a silent
-/// notification to confirm with the app that the user was created and then process the original request
+/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user
 /// INCASE the userID hash exists on the database anything to do with saving tracking history or sending addressed notifications should proceed with the raw userID
 async fn check_user_exists(
     client: web::Data<Client>,
@@ -129,13 +137,106 @@ async fn check_user_exists(
     }
 }
 
-// async fn create_user(
-//     client: web::Data<Client>,
-//     user_id: String,
-//     user_name: String,
-// ) -> impl Responder {
-//      println!("creating user now...");
-// }
+/// Create the user but before check again if the user already exists on the database, double check act as a guard in case this function is ever used in a context
+/// where it is not triggered by the predicted interaction
+async fn create_user(
+    client: web::Data<Client>,
+    user_details: user_details,
+) -> Result<bool, user_check_error> {
+    println!("creating user now...");
+
+    let db = client.database("teletrack");
+    let collection: mongodb::Collection<user> = db.collection("users");
+
+    // create the user document
+    let user = user {
+        user_id: user_details.user_id.clone(),
+        user_id_hash: encode(Sha256::digest(user_details.user_id.as_bytes())),
+        user_name: user_details.user_name,
+    };
+
+    // check if the user exists already
+    let filter = doc! {"user_id_hash": &user.user_id_hash};
+    let duplicate_present = collection.find_one(filter, None).await;
+    if duplicate_present.is_ok() {
+        // throw error if the result contains a value
+        return Err(user_check_error::UserAlreadyExists);
+    }
+
+    // insert the user
+    let result = collection.insert_one(user, None).await;
+
+    match result {
+        Ok(_) => Ok(true),
+        Err(e) => Err(user_check_error::DatabaseError(e)),
+    }
+}
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    API CALLS
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+/// Function for calling the API to register a single tracking number
+async fn track_single(
+    data: web::Data<app_state>,
+    tracking_number: web::Path<String>,
+) -> impl Responder {
+    let tracking_client = data.tracking_client.clone();
+    //TODO: implement logic for notifying the right user of the update on their package
+    match tracking_client
+        .track_single_package(&tracking_number.into_inner())
+        .await
+    {
+        Ok(data) => HttpResponse::Ok().json(data),
+        Err(e) => {
+            eprintln!("Error tracking package: {}", e);
+            if e.to_string().contains("No tracking data found") {
+                HttpResponse::NotFound().body("No tracking data found")
+            } else {
+                HttpResponse::InternalServerError().body("Request error")
+            }
+        }
+    }
+}
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    NOTIFICATION FUNCTIONS
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+/// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
+/// telegram environment and pass the data to be resolved in the mini app
+async fn notify_of_tracking_event_update(
+    data: web::Data<app_state>,
+    // to what user //TODO: verify to which user using database
+    user_id: web::Path<i64>,
+) -> impl Responder {
+    // access the service and deal with validation checks from the errors
+    match &*data.notification_service {
+        Ok(service) => {
+            match service
+                .send_ma_notification(
+                    *user_id,
+                    "Update on your order tracking.",
+                    Some(vec![
+                        ("balls", "new new params"),
+                        ("balls2", "properly handled"),
+                    ]),
+                )
+                .await
+            {
+                Ok(_) => HttpResponse::Ok().json("Notification sent successfully"),
+                Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+    }
+}
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -189,6 +290,7 @@ async fn write_to_db_test(
     }
 }
 
+/// Function for reading from the database
 async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -> impl Responder {
     println!("reading from DB");
 
@@ -227,53 +329,41 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
     }
 }
 
-/// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
-/// telegram environment and pass the data to be resolved in the mini app
-async fn notify_of_tracking_event_update(
-    data: web::Data<app_state>,
-    // to what user //TODO: verify to which user using database
-    user_id: web::Path<i64>,
+/// Function for responding to a client request to create a new user
+/// the header has to have the hashed user ID like the other function, and the raw user ID + name in the body of the function as a json
+async fn create_user_handler(
+    client: web::Data<Client>,
+    request: HttpRequest,
+    data: Json<user_details>,
 ) -> impl Responder {
-    // access the service and deal with validation checks from the errors
-    match &*data.notification_service {
-        Ok(service) => {
-            match service
-                .send_ma_notification(
-                    *user_id,
-                    "Update on your order tracking.",
-                    Some(vec![
-                        ("balls", "new new params"),
-                        ("balls2", "properly handled"),
-                    ]),
-                )
-                .await
-            {
-                Ok(_) => HttpResponse::Ok().json("Notification sent successfully"),
-                Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+    // again check if user exists already
+    match check_user_exists(client.clone(), request).await {
+        // user already exists
+        Ok(user_id) => {
+            println!("user already exists");
+            HttpResponse::build(
+                StatusCode::from_u16(521).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .json(serde_json::json!({"unexpected error": "user already exists"}))
+        }
+        // user doesn't exist yet, create the user
+        Err(user_check_error::UserNotFound) => {
+            println!("creating user now...");
+
+            // call the function to create the user and pass the client parameters
+            let user_created = create_user(client.clone(), data.into_inner()).await;
+            match user_created {
+                Ok(_) => HttpResponse::Ok().body("user created"),
+                Err(e) => HttpResponse::InternalServerError().body(format!(
+                    "internal server error while trying to create user: {}",
+                    e
+                )),
             }
         }
-        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
-    }
-}
-
-async fn track_single(
-    data: web::Data<app_state>,
-    tracking_number: web::Path<String>,
-) -> impl Responder {
-    let tracking_client = data.tracking_client.clone();
-    //TODO: implement logic for notifying the right user of the update on their package
-    match tracking_client
-        .track_single_package(&tracking_number.into_inner())
-        .await
-    {
-        Ok(data) => HttpResponse::Ok().json(data),
+        // some other error
         Err(e) => {
-            eprintln!("Error tracking package: {}", e);
-            if e.to_string().contains("No tracking data found") {
-                HttpResponse::NotFound().body("No tracking data found")
-            } else {
-                HttpResponse::InternalServerError().body("Request error")
-            }
+            println!("errur: {}", e);
+            HttpResponse::InternalServerError().body(e.to_string())
         }
     }
 }
@@ -287,6 +377,20 @@ async fn track_single(
 
 #[options("/write")]
 async fn write_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/create_user")]
+async fn create_user_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -368,6 +472,7 @@ async fn main() -> std::io::Result<()> {
             // HTTPS receive
             .route("/write", web::post().to(write_to_db_test))
             .route("/test_read", web::get().to(test_read))
+            .route("/create_user", web::post().to(create_user_handler))
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
@@ -377,6 +482,7 @@ async fn main() -> std::io::Result<()> {
             .route("/track_one/{tracking_number}", web::get().to(track_single))
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
+            .service(create_user_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
