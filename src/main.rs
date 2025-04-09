@@ -390,9 +390,11 @@ async fn register_tracking_number(
 
                     // put it in the database
                     let db = client.database("teletrack");
-                    let collection: mongodb::Collection<tracking_number_user_relation> =
+                    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
                         db.collection("tracking_number_user_relation");
-                    let insert_result = collection.insert_one(tracking_user_relation, None).await;
+                    let insert_result = collection_relations
+                        .insert_one(tracking_user_relation, None)
+                        .await;
                     match insert_result {
                         Ok(_) => {
                             // inserted correctly
@@ -406,10 +408,25 @@ async fn register_tracking_number(
 
                     // convert the tracking_data_get_info to tracking_data_database_form and save it
                     let tracking_data_database_form =
-                        tracking_data_get_info.convert_to_TrackingData_DBF(user_id_hash);
-
-                    // return relevant tracking information to the user // TODO: figure out what is relevant
-                    HttpResponse::Ok().json(tracking_data_database_form)
+                        tracking_data_get_info.convert_to_TrackingData_DBF();
+                    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+                        db.collection("tracking_data");
+                    let insert_tracking_data = collection_tracking_data
+                        .insert_one(tracking_data_database_form.clone(), None)
+                        .await;
+                    match insert_tracking_data {
+                        // return the tracking data to the client
+                        Ok(_) => {
+                            // inserted correctly
+                            println!("tracking data inserted");
+                            // return relevant tracking information to the user // TODO: figure out what is relevant
+                            HttpResponse::Ok().json(tracking_data_database_form)
+                        }
+                        Err(e) => {
+                            println!("{}", e);
+                            HttpResponse::InternalServerError().body(e.to_string())
+                        }
+                    }
                 }
                 Err(e) => match e {
                     // tracking information for the number not found

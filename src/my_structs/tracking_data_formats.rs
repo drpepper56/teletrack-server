@@ -164,11 +164,10 @@ pub mod tracking_data_get_info {
     }
 
     impl TrackingResponse {
-        pub fn convert_to_TrackingData_DBF(&self, user_id_hash: String) -> TrackingData_DBF {
+        pub fn convert_to_TrackingData_DBF(&self) -> TrackingData_DBF {
             let accepted_package = self.data.accepted.as_ref().unwrap().first().unwrap();
             TrackingData_DBF {
                 code: self.code.clone(),
-                user_id_hash: user_id_hash,
                 data: PackageData {
                     number: accepted_package.number.clone(),
                     carrier: accepted_package.carrier.clone(),
@@ -271,14 +270,13 @@ pub mod tracking_data_database_form {
     use crate::my_structs::tracking_data_formats::tracking_data_base::TrackInfo;
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct TrackingData_DBF {
         pub code: i32,
-        pub user_id_hash: String,
         pub data: PackageData,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct PackageData {
         pub number: String,
         pub carrier: i32,
