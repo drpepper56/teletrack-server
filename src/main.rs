@@ -443,19 +443,22 @@ async fn register_tracking_number(
                                             HttpResponse::Ok().json(tracking_data_database_form)
                                         }
                                         Err(e) => {
-                                            println!("{}", e);
+                                            println!("@REGISTER_TRACKING_NUMBER: error inserting tracking data: {}", e);
                                             HttpResponse::InternalServerError().body(e.to_string())
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    println!("{}", e);
+                                    println!("@REGISTER_TRACKING_NUMBER: error getting the tracking data: {}", e);
                                     HttpResponse::InternalServerError().body(e.to_string())
                                 }
                             }
                         }
                         Err(e) => {
-                            println!("error inserting relation record: {}", e);
+                            println!(
+                                "@REGISTER_TRACKING_NUMBER: error inserting relation record: {}",
+                                e
+                            );
                             HttpResponse::InternalServerError().body(e.to_string())
                         }
                     }
@@ -602,7 +605,7 @@ async fn main() -> std::io::Result<()> {
             .route("/test_read", web::get().to(test_read))
             .route("/create_user", web::post().to(create_user_handler))
             .route(
-                "register_tracking_number",
+                "/register_tracking_number",
                 web::post().to(register_tracking_number),
             )
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
