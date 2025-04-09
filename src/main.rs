@@ -8,6 +8,10 @@ mod trackingapi;
 //TODO: CHANGE THE WEBHOOK.LEMONCARDBOARD.UK ROOT TO SOMETHING BETTER THAN WEBHOOK (LIKE TELETRACK)
 mod webhook;
 
+use crate::{
+    my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
+    my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
+};
 use actix_cors::Cors;
 use actix_web::{
     middleware::Logger,
@@ -15,6 +19,7 @@ use actix_web::{
     web::{self, Json},
     App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use core::error;
 use dotenv::dotenv;
 use futures::{stream::StreamExt, stream::TryStreamExt};
 use hex::encode;
@@ -28,7 +33,7 @@ use reqwest::{Client as ReqwestClient, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{collections, env, result, sync::Arc};
+use std::{collections, env, f32::consts::E, result, sync::Arc};
 use trackingapi::{tracking_client, tracking_error};
 
 /*
@@ -75,11 +80,26 @@ struct testing_data_format {
     value: String,
 }
 
-// struct for getting user details from the backend
+// struct for getting user details from the client
 #[derive(Serialize, Deserialize, Debug)]
 struct user_details {
     user_id: String,
     user_name: String,
+}
+
+// struct for getting a tracking number + carrier (optional) from client
+#[derive(Serialize, Deserialize, Debug)]
+struct tracking_number_carrier {
+    tracking_number: String,
+    carrier: Option<String>,
+}
+
+// struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
+#[derive(Serialize, Deserialize, Debug)]
+struct tracking_number_user_relation {
+    tracking_number: String,
+    carrier: Option<String>,
+    user_id_hash: String,
 }
 
 /*
@@ -95,7 +115,7 @@ struct user_details {
 async fn check_user_exists(
     client: web::Data<Client>,
     request: HttpRequest,
-) -> Result<String, user_check_error> {
+) -> Result<String, HttpResponse> {
     // open the head and try to get the relevant value that should be there
     let user_id_hash = match request.headers().get("X-User-ID-Hash") {
         Some(header) => match header.to_str() {
@@ -105,21 +125,24 @@ async fn check_user_exists(
             }
             Err(_) => {
                 println!("invalid header");
-                return Err(user_check_error::InvalidHeader);
+                return Err(HttpResponse::BadRequest().json(
+                    serde_json::json!({"request header error": "missing header X-USER-ID-HASH"}),
+                ));
             }
         },
         None => {
             println!("no hhead?");
-            return Err(user_check_error::MissingHeader);
+            return Err(
+                HttpResponse::BadRequest().json(serde_json::json!({"header error": "no head?"}))
+            );
         }
     };
 
-    println!("@CHECK_USER_EXISTS: verifying user now...");
     // chose the right database and collection
+    // search for the user id hash and return the actual ID if found, send errors otherwise
+    println!("@CHECK_USER_EXISTS: verifying user now...");
     let db = client.database("teletrack");
     let collection: mongodb::Collection<user> = db.collection("users");
-
-    // search for the userid hash and return the actual ID if found, send errors otherwise
     let filter = doc! {"user_id_hash": user_id_hash};
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
@@ -128,11 +151,14 @@ async fn check_user_exists(
         }
         Ok(None) => {
             println!("@CHECK_USER_EXISTS: user not found");
-            Err(user_check_error::UserNotFound)
+            Err(HttpResponse::build(
+                StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .json(serde_json::json!({"expected error": "user doesn't exist yet"})))
         }
         Err(e) => {
             eprintln!("@CHECK_USER_EXISTS: mongodb not goated: {}", e);
-            Err(user_check_error::DatabaseError(e))
+            Err(HttpResponse::InternalServerError().body(format!("database error: {}", e)))
         }
     }
 }
@@ -167,7 +193,7 @@ async fn create_user(
             println!("@CREATE_USER: user doesn't exist yet");
         }
         Err(e) => {
-            eprintln!("database error in @CREATE_USER: {}", e);
+            eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
             return Err(user_check_error::DatabaseError(e));
         }
     }
@@ -191,23 +217,13 @@ async fn create_user(
 /// Function for calling the API to register a single tracking number
 async fn track_single(
     data: web::Data<app_state>,
-    tracking_number: web::Path<String>,
-) -> impl Responder {
+    tracking_number: String,
+) -> Result<tracking_data_get_info, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
     //TODO: implement logic for notifying the right user of the update on their package
-    match tracking_client
-        .track_single_package(&tracking_number.into_inner())
-        .await
-    {
-        Ok(data) => HttpResponse::Ok().json(data),
-        Err(e) => {
-            eprintln!("Error tracking package: {}", e);
-            if e.to_string().contains("No tracking data found") {
-                HttpResponse::NotFound().body("No tracking data found")
-            } else {
-                HttpResponse::InternalServerError().body("Request error")
-            }
-        }
+    match tracking_client.track_single_package(&tracking_number).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
     }
 }
 
@@ -265,14 +281,9 @@ async fn write_to_db_test(
     match check_user_exists(client.clone(), request).await {
         // user exists, continue
         Ok(user_id) => {
-            //TODO: we got him
-            println!("{}", user_id);
-
-            println!("writing to DB");
-
+            // start connection to DB
             let db = client.database("testbase");
             let collection: mongodb::Collection<testing_data_format> = db.collection("test");
-
             let result = collection.insert_one(data.into_inner(), None).await;
 
             match result {
@@ -284,18 +295,7 @@ async fn write_to_db_test(
             }
         }
         // user doesn't exist, respond with 520
-        Err(user_check_error::UserNotFound) => {
-            // println!("user not found");
-            HttpResponse::build(
-                StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            )
-            .json(serde_json::json!({"expected error": "user doesn't exist yet"}))
-        }
-        // some other error
-        Err(e) => {
-            println!("errur: {}", e);
-            HttpResponse::InternalServerError().body(e.to_string())
-        }
+        Err(response) => response,
     }
 }
 
@@ -355,28 +355,80 @@ async fn create_user_handler(
             )
             .json(serde_json::json!({"unexpected error": "user already exists"}))
         }
-        // user doesn't exist yet, create the user
-        Err(user_check_error::UserNotFound) => {
-            println!("creating user now...");
 
-            // call the function to create the user and pass the client parameters
-            let user_created = create_user(client.clone(), data.into_inner()).await;
-            match user_created {
-                Ok(_) => HttpResponse::Ok().body("user created"),
-                Err(e) => HttpResponse::InternalServerError().body(format!(
-                    "internal server error while trying to create user: {}",
-                    e
-                )),
-            }
-        }
         // some other error
-        Err(e) => {
-            println!("errur: {}", e);
-            HttpResponse::InternalServerError().body(e.to_string())
-        }
+        Err(response) => response,
     }
 }
 
+/// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
+/// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
+async fn register_tracking_number(
+    client: web::Data<Client>,
+    app_state: web::Data<app_state>,
+    tracking_number: web::Path<tracking_number_carrier>,
+    request: HttpRequest,
+) -> impl Responder {
+    // check if user exists
+    match check_user_exists(client.clone(), request).await {
+        // user exists, continue
+        Ok(user_id_hash) => {
+            // register the tracking with the code with the api get the tracking_data_get_info
+            match track_single(app_state.clone(), tracking_number.tracking_number.clone()).await {
+                Ok(tracking_data_get_info) => {
+                    println!("tracking number registered");
+
+                    // create the relation record
+                    let tracking_user_relation = tracking_number_user_relation {
+                        tracking_number: tracking_number.tracking_number.clone(),
+                        carrier: tracking_number.carrier.clone(),
+                        user_id_hash: user_id_hash.clone(),
+                    };
+
+                    // put it in the database
+                    let db = client.database("teletrack");
+                    let collection: mongodb::Collection<tracking_number_user_relation> =
+                        db.collection("tracking_number_user_relation");
+                    let insert_result = collection.insert_one(tracking_user_relation, None).await;
+                    match insert_result {
+                        Ok(_) => {
+                            // inserted correctly
+                            println!("relation record inserted");
+                        }
+                        Err(e) => {
+                            println!("error inserting relation record: {}", e);
+                            HttpResponse::InternalServerError().body(e.to_string());
+                        }
+                    }
+
+                    // convert the tracking_data_get_info to tracking_data_database_form and save it
+                    let tracking_data_database_form =
+                        tracking_data_get_info.convert_to_TrackingData_DBF(user_id_hash);
+
+                    // return relevant tracking information to the user // TODO: figure out what is relevant
+                    HttpResponse::Ok().json(tracking_data_database_form)
+                }
+                Err(e) => match e {
+                    // tracking information for the number not found
+                    tracking_error::NoDataFound => {
+                        // TODO: add carrier search in a catch clause
+                        println!(
+                            "@REGISTER_TRACKING_NUMBER: tracking number not found => {}",
+                            e
+                        );
+                        HttpResponse::InternalServerError().body(e.to_string())
+                    }
+                    e => {
+                        println!("@REGISTER_TRACKING_NUMBER:{}", e);
+                        HttpResponse::InternalServerError().body(e.to_string())
+                    }
+                },
+            }
+        }
+        // user doesn't exist, respond with 520
+        Err(response) => response,
+    }
+}
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -487,8 +539,6 @@ async fn main() -> std::io::Result<()> {
                 "/notify/{user_id}",
                 web::post().to(notify_of_tracking_event_update),
             )
-            // HTTPS send request to tracking API //TODO: route to be removed and function called a user request
-            .route("/track_one/{tracking_number}", web::get().to(track_single))
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
             .service(create_user_options)
