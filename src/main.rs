@@ -100,7 +100,7 @@ async fn check_user_exists(
     let user_id_hash = match request.headers().get("X-User-ID-Hash") {
         Some(header) => match header.to_str() {
             Ok(s) => {
-                println!("{}", s);
+                println!("@CHECK_USER_EXISTS:{}", s);
                 s.to_string()
             }
             Err(_) => {
@@ -114,7 +114,7 @@ async fn check_user_exists(
         }
     };
 
-    println!("verifying user now...");
+    println!("@CHECK_USER_EXISTS: verifying user now...");
     // chose the right database and collection
     let db = client.database("teletrack");
     let collection: mongodb::Collection<user> = db.collection("users");
@@ -123,15 +123,15 @@ async fn check_user_exists(
     let filter = doc! {"user_id_hash": user_id_hash};
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
-            println!("user found: {:?}", user);
+            println!("@CHECK_USER_EXISTS: user found: {:?}", user);
             Ok(user.user_id) // Return the user ID as hex string
         }
         Ok(None) => {
-            println!("user not found");
+            println!("@CHECK_USER_EXISTS: user not found");
             Err(user_check_error::UserNotFound)
         }
         Err(e) => {
-            eprintln!("mongodb not goated: {}", e);
+            eprintln!("@CHECK_USER_EXISTS: mongodb not goated: {}", e);
             Err(user_check_error::DatabaseError(e))
         }
     }
@@ -143,7 +143,7 @@ async fn create_user(
     client: web::Data<Client>,
     user_details: user_details,
 ) -> Result<bool, user_check_error> {
-    println!("creating user now...");
+    println!("@CREATE_USER: creating user now...");
 
     let db = client.database("teletrack");
     let collection: mongodb::Collection<user> = db.collection("users");
@@ -158,9 +158,18 @@ async fn create_user(
     // check if the user exists already
     let filter = doc! {"user_id_hash": &user.user_id_hash};
     let duplicate_present = collection.find_one(filter, None).await;
-    if duplicate_present.is_ok() {
-        // throw error if the result contains a value
-        return Err(user_check_error::UserAlreadyExists);
+    match duplicate_present {
+        Ok(Some(_)) => {
+            println!("@CREATE_USER: user already exists");
+            return Err(user_check_error::UserAlreadyExists);
+        }
+        Ok(None) => {
+            println!("@CREATE_USER: user doesn't exist yet");
+        }
+        Err(e) => {
+            eprintln!("database error in @CREATE_USER: {}", e);
+            return Err(user_check_error::DatabaseError(e));
+        }
     }
 
     // insert the user
