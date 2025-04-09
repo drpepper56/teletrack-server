@@ -189,12 +189,12 @@ async fn create_user(
             println!("@CREATE_USER: user already exists");
             return Err(user_check_error::UserAlreadyExists);
         }
-        Ok(None) => {
-            println!("@CREATE_USER: user doesn't exist yet");
-        }
         Err(e) => {
             eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
             return Err(user_check_error::DatabaseError(e));
+        }
+        Ok(None) => {
+            println!("@CREATE_USER: user doesn't exist yet");
         }
     }
 
@@ -356,8 +356,11 @@ async fn create_user_handler(
             .json(serde_json::json!({"unexpected error": "user already exists"}))
         }
 
-        // some other error
-        Err(response) => response,
+        // user doesn't exist yet
+        Err(response) => match create_user(client.clone(), data.into_inner()).await {
+            Ok(_) => HttpResponse::Ok().body("user created"),
+            Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        },
     }
 }
 
@@ -429,6 +432,7 @@ async fn register_tracking_number(
         Err(response) => response,
     }
 }
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -452,6 +456,20 @@ async fn write_options() -> impl Responder {
 }
 #[options("/create_user")]
 async fn create_user_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/register_tracking_number")]
+async fn register_tracking_number_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -534,6 +552,10 @@ async fn main() -> std::io::Result<()> {
             .route("/write", web::post().to(write_to_db_test))
             .route("/test_read", web::get().to(test_read))
             .route("/create_user", web::post().to(create_user_handler))
+            .route(
+                "register_tracking_number",
+                web::post().to(register_tracking_number),
+            )
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
@@ -542,6 +564,7 @@ async fn main() -> std::io::Result<()> {
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
             .service(create_user_options)
+            .service(register_tracking_number_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
