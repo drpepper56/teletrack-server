@@ -9,6 +9,7 @@ mod trackingapi;
 mod webhook;
 
 use crate::{
+    my_structs::tracking_data_formats::register_tracking_number_response::RegisterResponse,
     my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
     my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
 };
@@ -87,18 +88,11 @@ struct user_details {
     user_name: String,
 }
 
-// struct for getting a tracking number + carrier (optional) from client
-#[derive(Serialize, Deserialize, Debug)]
-struct tracking_number_carrier {
-    tracking_number: String,
-    carrier: Option<String>,
-}
-
 // struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
 #[derive(Serialize, Deserialize, Debug)]
 struct tracking_number_user_relation {
     tracking_number: String,
-    carrier: Option<String>,
+    carrier: Option<i32>,
     user_id_hash: String,
 }
 
@@ -220,8 +214,7 @@ async fn track_single(
     tracking_number: String,
 ) -> Result<tracking_data_get_info, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
-    //TODO: implement logic for notifying the right user of the update on their package
-    match tracking_client.track_single_package(&tracking_number).await {
+    match tracking_client.gettrackinfo_pull(&tracking_number).await {
         Ok(data) => Ok(data),
         Err(e) => Err(e),
     }
@@ -230,13 +223,18 @@ async fn track_single(
 /// Function for calling the API to register a single tracking number
 async fn register_single(
     data: web::Data<app_state>,
-    tracking_number: String,
-) -> Result<bool, trackingapi::tracking_error> {
+    tracking_details: trackingapi::tracking_number_carrier,
+) -> Result<RegisterResponse, trackingapi::tracking_error> {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client.register_tracking(tracking_details).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
 }
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    NOTIFICATION FUNCTIONS
+NOTIFICATION FUNCTIONS
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -269,6 +267,8 @@ async fn notify_of_tracking_event_update(
         Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
     }
 }
+
+// TODO: implement logic for notifying the right user of the update on their package
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -375,8 +375,8 @@ async fn create_user_handler(
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
 async fn register_tracking_number(
     client: web::Data<Client>,
-    app_state: web::Data<app_state>,
-    tracking_number: web::Path<tracking_number_carrier>,
+    data: web::Data<app_state>,
+    tracking_details: web::Path<trackingapi::tracking_number_carrier>,
     request: HttpRequest,
 ) -> impl Responder {
     // check if user exists
@@ -384,14 +384,14 @@ async fn register_tracking_number(
         // user exists, continue
         Ok(user_id_hash) => {
             // register the tracking with the code with the api get the tracking_data_get_info
-            match track_single(app_state.clone(), tracking_number.tracking_number.clone()).await {
-                Ok(tracking_data_get_info) => {
+            match register_single(data.clone(), tracking_details.into_inner()).await {
+                Ok(register_response) => {
                     println!("tracking number registered");
 
                     // create the relation record
                     let tracking_user_relation = tracking_number_user_relation {
-                        tracking_number: tracking_number.tracking_number.clone(),
-                        carrier: tracking_number.carrier.clone(),
+                        tracking_number: tracking_details.tracking_number.clone(),
+                        carrier: Some(register_response.data.accepted.unwrap()[0].carrier.clone()),
                         user_id_hash: user_id_hash.clone(),
                     };
 
@@ -415,12 +415,13 @@ async fn register_tracking_number(
 
                     // convert the tracking_data_get_info to tracking_data_database_form and save it
                     let tracking_data_database_form =
-                        tracking_data_get_info.convert_to_TrackingData_DBF();
+                        register_response.convert_to_TrackingData_DBF();
                     let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
                         db.collection("tracking_data");
                     let insert_tracking_data = collection_tracking_data
                         .insert_one(tracking_data_database_form.clone(), None)
                         .await;
+
                     match insert_tracking_data {
                         // return the tracking data to the client
                         Ok(_) => {

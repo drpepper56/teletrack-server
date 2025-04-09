@@ -168,8 +168,8 @@ pub mod register_tracking_number_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Vec<Accepted>,
-        pub rejected: Vec<Rejected>,
+        pub accepted: Option<Vec<Accepted>>,
+        pub rejected: Option<Vec<Rejected>>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
@@ -226,8 +226,8 @@ pub mod stop_tracking_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Vec<Accepted>,
-        pub rejected: Vec<Rejected>,
+        pub accepted: Option<Vec<Accepted>>,
+        pub rejected: Option<Vec<Rejected>>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
@@ -279,8 +279,8 @@ pub mod delete_tracking_number_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Vec<Accepted>,
-        pub rejected: Vec<Rejected>,
+        pub accepted: Option<Vec<Accepted>>,
+        pub rejected: Option<Vec<Rejected>>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
