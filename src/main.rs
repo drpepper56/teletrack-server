@@ -214,7 +214,7 @@ async fn create_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
-/// Function for calling the API to register a single tracking number
+/// Function for calling the API to push for info on a single tracking number
 async fn track_single(
     data: web::Data<app_state>,
     tracking_number: String,
@@ -225,6 +225,13 @@ async fn track_single(
         Ok(data) => Ok(data),
         Err(e) => Err(e),
     }
+}
+
+/// Function for calling the API to register a single tracking number
+async fn register_single(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<bool, trackingapi::tracking_error> {
 }
 
 /*

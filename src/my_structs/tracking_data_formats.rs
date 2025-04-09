@@ -1,99 +1,138 @@
 /*
 
+    Struct to parse response of registering a tracking number on the API
+
+*/
+pub mod register_tracking_number_response {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RegisterResponse {
+        pub code: i32,
+        pub data: Data,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Data {
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Accepted {
+        pub origin: i32,
+        pub number: String,
+        pub carrier: i32,
+        pub email: Option<String>,
+        pub tag: String,
+        pub lang: Option<String>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Rejected {
+        pub number: String,
+        pub tag: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RejectedError {
+        pub code: i32,
+        pub message: String,
+    }
+}
+
+/*
+
     Base form structs that repeat
 
 */
-
 pub mod tracking_data_base {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TrackInfo {
+    pub struct track_info {
         // here was the problem that took a whole day
         pub lastGatherTime: String, //TODO: this can go tits up
-        pub shipping_info: ShippingInfo,
-        pub latest_status: Status,
-        pub latest_event: Event,
-        pub time_metrics: TimeMetrics,
-        pub milestone: Vec<Milestone>,
-        pub misc_info: MiscInfo,
-        pub tracking: TrackingDetails,
+        pub shipping_info: shipping_info,
+        pub latest_status: status,
+        pub latest_event: event,
+        pub time_metrics: time_metrics,
+        pub milestone: Vec<milestone>,
+        pub misc_info: misc_info,
+        pub tracking: tracking_details,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct ShippingInfo {
-        pub shipper_address: Address,
-        pub recipient_address: Address,
+    pub struct shipping_info {
+        pub shipper_address: address,
+        pub recipient_address: address,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Address {
+    pub struct address {
         pub country: Option<String>,
         pub state: Option<String>,
         pub city: Option<String>,
         pub street: Option<String>,
         pub postal_code: Option<String>,
-        pub coordinates: Coordinates,
+        pub coordinates: coordinates,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Coordinates {
+    pub struct coordinates {
         pub longitude: Option<f64>,
         pub latitude: Option<f64>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Status {
+    pub struct status {
         pub status: String,
         pub sub_status: String,
         pub sub_status_descr: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Event {
+    pub struct event {
         pub time_iso: String,
         pub time_utc: String,
-        pub time_raw: TimeRaw,
+        pub time_raw: time_raw,
         pub description: String,
         pub location: String,
         pub stage: Option<String>,
         pub sub_status: String,
-        pub address: Address,
+        pub address: address,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TimeRaw {
+    pub struct time_raw {
         pub date: Option<String>,
         pub time: Option<String>,
         pub timezone: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TimeMetrics {
+    pub struct time_metrics {
         pub days_after_order: i32,
         pub days_of_transit: i32,
         pub days_of_transit_done: i32,
         pub days_after_last_update: i32,
-        pub estimated_delivery_date: DeliveryEstimate,
+        pub estimated_delivery_date: delivery_estimate,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct DeliveryEstimate {
+    pub struct delivery_estimate {
         pub source: Option<String>,
         pub from: Option<String>,
         pub to: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Milestone {
+    pub struct milestone {
         pub key_stage: String,
         pub time_iso: Option<String>,
         pub time_utc: Option<String>,
-        pub time_raw: TimeRaw,
+        pub time_raw: time_raw,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct MiscInfo {
+    pub struct misc_info {
         pub risk_factor: i32,
         pub service_type: Option<String>,
         pub weight_raw: Option<String>,
@@ -108,24 +147,24 @@ pub mod tracking_data_base {
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TrackingDetails {
+    pub struct tracking_details {
         pub providers_hash: i32,
-        pub providers: Vec<Provider>,
+        pub providers: Vec<provider>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Provider {
-        pub provider: CarrierInfo,
+    pub struct provider {
+        pub provider: carrier_info,
         pub provider_lang: Option<String>,
         pub service_type: Option<String>,
         pub latest_sync_status: String,
         pub latest_sync_time: String,
         pub events_hash: i32,
-        pub events: Vec<Event>,
+        pub events: Vec<event>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct CarrierInfo {
+    pub struct carrier_info {
         pub key: i32,
         pub name: String,
         pub alias: String,
@@ -148,10 +187,9 @@ pub mod tracking_data_base {
     any rejected
 
 */
-
 pub mod tracking_data_get_info {
     use crate::{
-        my_structs::tracking_data_formats::tracking_data_base::TrackInfo,
+        my_structs::tracking_data_formats::tracking_data_base::track_info,
         my_structs::tracking_data_formats::tracking_data_database_form::PackageData,
         my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
     };
@@ -191,7 +229,7 @@ pub mod tracking_data_get_info {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: String,
-        pub track_info: TrackInfo,
+        pub track_info: track_info,
     }
 
     // Rejected
@@ -218,9 +256,8 @@ pub mod tracking_data_get_info {
     wish me luck
 
 */
-
 pub mod tracking_data_webhook_update {
-    use crate::my_structs::tracking_data_formats::tracking_data_base::TrackInfo;
+    use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
     use serde::{Deserialize, Serialize};
     #[derive(Debug, Serialize, Deserialize)]
     pub struct TrackingResponse {
@@ -250,7 +287,7 @@ pub mod tracking_data_webhook_update {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: String,
-        pub track_info: TrackInfo,
+        pub track_info: track_info,
     }
 }
 
@@ -265,9 +302,8 @@ pub mod tracking_data_webhook_update {
     and @PackageData === Option<Vec<AcceptedPackage>> for converting from get_info where AcceptedPackage is the PackageData no array
 
 */
-
 pub mod tracking_data_database_form {
-    use crate::my_structs::tracking_data_formats::tracking_data_base::TrackInfo;
+    use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -282,6 +318,6 @@ pub mod tracking_data_database_form {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: String,
-        pub track_info: TrackInfo,
+        pub track_info: track_info,
     }
 }
