@@ -34,7 +34,7 @@ pub struct tracking_client {
 }
 
 // struct for getting a tracking number + carrier (optional) from client
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct tracking_number_carrier {
     pub tracking_number: String,
     pub carrier: Option<i32>,

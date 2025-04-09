@@ -373,6 +373,7 @@ async fn create_user_handler(
 
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
+///TODO: make the nesting possible to look at
 async fn register_tracking_number(
     client: web::Data<Client>,
     data: web::Data<app_state>,
@@ -383,8 +384,10 @@ async fn register_tracking_number(
     match check_user_exists(client.clone(), request).await {
         // user exists, continue
         Ok(user_id_hash) => {
-            // register the tracking with the code with the api get the tracking_data_get_info
-            match register_single(data.clone(), tracking_details.into_inner()).await {
+            let tracking_details_copy = tracking_details.clone();
+
+            // registered the tracking number with the API successfully
+            match register_single(data.clone(), tracking_details_copy).await {
                 Ok(register_response) => {
                     println!("tracking number registered");
 
@@ -394,7 +397,6 @@ async fn register_tracking_number(
                         carrier: Some(register_response.data.accepted.unwrap()[0].carrier.clone()),
                         user_id_hash: user_id_hash.clone(),
                     };
-
                     // put it in the database
                     let db = client.database("teletrack");
                     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
@@ -402,36 +404,58 @@ async fn register_tracking_number(
                     let insert_result = collection_relations
                         .insert_one(tracking_user_relation, None)
                         .await;
+
                     match insert_result {
+                        // relation record inserted,
+                        // proceed to pull the tracking information now and push it to the tracking_data collection
                         Ok(_) => {
-                            // inserted correctly
                             println!("relation record inserted");
+                            let gettrackinfo_result = track_single(
+                                data.clone(),
+                                tracking_details.clone().tracking_number,
+                            )
+                            .await;
+
+                            match gettrackinfo_result {
+                                // first tracking data retrieved successfully
+                                // the relation collection holds this tracking info's tracking number in relation
+                                // to the appropriate user code so save it loosely in the tracking_data collection
+                                Ok(tracking_data) => {
+                                    println!("tracking data received");
+
+                                    // convert the tracking_data_get_info to tracking_data_database_form and save it
+                                    let tracking_data_database_form =
+                                        tracking_data.convert_to_TrackingData_DBF();
+                                    let collection_tracking_data: mongodb::Collection<
+                                        tracking_data_database_form,
+                                    > = db.collection("tracking_data");
+                                    let insert_tracking_data = collection_tracking_data
+                                        .insert_one(tracking_data_database_form.clone(), None)
+                                        .await;
+
+                                    match insert_tracking_data {
+                                        // first tracking data saved successfully
+                                        // return something relevant to the client
+                                        Ok(_) => {
+                                            println!("tracking data inserted");
+                                            // return relevant tracking information to the user
+                                            // TODO: figure out what is relevant
+                                            HttpResponse::Ok().json(tracking_data_database_form)
+                                        }
+                                        Err(e) => {
+                                            println!("{}", e);
+                                            HttpResponse::InternalServerError().body(e.to_string())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("{}", e);
+                                    HttpResponse::InternalServerError().body(e.to_string())
+                                }
+                            }
                         }
                         Err(e) => {
                             println!("error inserting relation record: {}", e);
-                            HttpResponse::InternalServerError().body(e.to_string());
-                        }
-                    }
-
-                    // convert the tracking_data_get_info to tracking_data_database_form and save it
-                    let tracking_data_database_form =
-                        register_response.convert_to_TrackingData_DBF();
-                    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
-                        db.collection("tracking_data");
-                    let insert_tracking_data = collection_tracking_data
-                        .insert_one(tracking_data_database_form.clone(), None)
-                        .await;
-
-                    match insert_tracking_data {
-                        // return the tracking data to the client
-                        Ok(_) => {
-                            // inserted correctly
-                            println!("tracking data inserted");
-                            // return relevant tracking information to the user // TODO: figure out what is relevant
-                            HttpResponse::Ok().json(tracking_data_database_form)
-                        }
-                        Err(e) => {
-                            println!("{}", e);
                             HttpResponse::InternalServerError().body(e.to_string())
                         }
                     }
