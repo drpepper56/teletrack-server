@@ -1,48 +1,4 @@
-/*
-
-    Struct to parse response of registering a tracking number on the API
-
-*/
-pub mod register_tracking_number_response {
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct RegisterResponse {
-        pub code: i32,
-        pub data: Data,
-    }
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Data {
-        pub accepted: Vec<Accepted>,
-        pub rejected: Vec<Rejected>,
-    }
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Accepted {
-        pub origin: i32,
-        pub number: String,
-        pub carrier: i32,
-        pub email: Option<String>,
-        pub tag: String,
-        pub lang: Option<String>,
-    }
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct Rejected {
-        pub number: String,
-        pub tag: String,
-        pub error: RejectedError,
-    }
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct RejectedError {
-        pub code: i32,
-        pub message: String,
-    }
-}
-
-/*
-
-    Base form structs that repeat
-
-*/
+///  Base form structs that repeat
 pub mod tracking_data_base {
     use serde::{Deserialize, Serialize};
 
@@ -174,18 +130,179 @@ pub mod tracking_data_base {
     }
 }
 
+/// Register Tracking
 /*
+    {
+        "code": 0,
+        "data": {
+            "accepted": [
+            {
+                "origin": 1,
+                "number": "RR123456789CN",
+                "carrier": 3011,
+                "email": null,
+                "tag": "MyOrderID",
+                "lang": null,
+            }
+            ],
+            "rejected": [
+            {
+                "number": "1234",
+                "tag": "My-Order-Id",
+                "error": {
+                "code": -18010012,
+                "message": "The format of '1234' is invalid."
+                }
+            }
+            ]
+        }
+    }
+*/
+pub mod register_tracking_number_response {
+    use serde::{Deserialize, Serialize};
 
-    Format for parsing the response of gettrackinfo from the api
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RegisterResponse {
+        pub code: i32,
+        pub data: Data,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Data {
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Accepted {
+        pub origin: i32,
+        pub number: String,
+        pub carrier: i32,
+        pub email: Option<String>,
+        pub tag: String,
+        pub lang: Option<String>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Rejected {
+        pub number: String,
+        pub tag: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RejectedError {
+        pub code: i32,
+        pub message: String,
+    }
+}
 
-    Tested for:
-    1 accepted
+/// Stop Tracking
+/*
+    {
+        "code": 0,
+        "data": {
+            "accepted": [
+            {
+                "number": "RR123456789CN",
+                "carrier": 3011
+            }
+            ],
+            "rejected": [
+                {
+                "number": "21213123123230",
+                "error": {
+                "code": -18019902,
+                "message": "The tracking number '21213123123230' does not register, please register first."
+                }
+            }
+            ]
+        }
+    }
+*/
+pub mod stop_tracking_response {
+    use serde::{Deserialize, Serialize};
 
-    Not Testes with:
-    >1 accepted
-    0 accepted
-    any rejected
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct StopTrackingResponse {
+        pub code: i32,
+        pub data: Data,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Data {
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Accepted {
+        pub number: String,
+        pub carrier: i32,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Rejected {
+        pub number: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RejectedError {
+        pub code: i32,
+        pub message: String,
+    }
+}
 
+/// Delete Tracking Number
+/*
+    {
+        "code": 0,
+        "data": {
+            "accepted": [
+            {
+                "number": "RR123456789CN",
+                "carrier": 3011
+            }
+            ],
+            "rejected": [
+            {
+                "number": "21213123123230",
+                "error": {
+                "code": -18019902,
+                "message": "The tracking number '21213123123230' does not register, please register first."
+                }
+            }
+            ]
+        }
+    }
+*/
+pub mod delete_tracking_number_response {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct DeleteTrackingResponseNumber {
+        pub code: i32,
+        pub data: Data,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Data {
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Accepted {
+        pub number: String,
+        pub carrier: i32,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Rejected {
+        pub number: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RejectedError {
+        pub code: i32,
+        pub message: String,
+    }
+}
+
+/// Gettrackinfo
+/*
+    refer to:
+    https://api.17track.net/en/doc?version=v2.2&anchor=get-tracking-details---post-httpsapi17tracknettrackv22gettrackinfo
 */
 pub mod tracking_data_get_info {
     use crate::{
@@ -245,16 +362,10 @@ pub mod tracking_data_get_info {
     }
 }
 
+/// Webhook update
 /*
-
-    Format for parsing the response of the webhook update payload
-
-    Tested for:
-
-    Not Testes with:
-
-    wish me luck
-
+    refer to:
+    https://api.17track.net/en/doc?version=v2.2&anchor=notification-status--content
 */
 pub mod tracking_data_webhook_update {
     use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
@@ -291,17 +402,7 @@ pub mod tracking_data_webhook_update {
     }
 }
 
-/*
-
-    Format for storing in the database as a single tracking info
-
-    follows the format of tracking_data_get_info but on the highest level it holds code and data where data is like a single
-    item from the Accepted array
-
-    so here @PackageData === @PackageData without the enum for converting from webhook_update
-    and @PackageData === Option<Vec<AcceptedPackage>> for converting from get_info where AcceptedPackage is the PackageData no array
-
-*/
+/// Custom format for storing in the database as a single tracking info
 pub mod tracking_data_database_form {
     use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
     use serde::{Deserialize, Serialize};
