@@ -377,7 +377,7 @@ async fn create_user_handler(
 async fn register_tracking_number(
     client: web::Data<Client>,
     data: web::Data<app_state>,
-    tracking_details: web::Path<trackingapi::tracking_number_carrier>,
+    tracking_details: web::Json<trackingapi::tracking_number_carrier>,
     request: HttpRequest,
 ) -> impl Responder {
     // check if user exists
