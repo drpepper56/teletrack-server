@@ -83,6 +83,14 @@ impl tracking_client {
         // for debugging, print the whole body of the response in the terminal
         let body_bytes = response.bytes().await?;
 
+        println!(
+            "response: {}",
+            body_bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        );
+
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @TrackingResponse instance
         let response_data = serde_json::from_slice::<RegisterResponse>(&body_bytes)?;

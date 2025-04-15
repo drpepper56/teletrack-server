@@ -160,8 +160,9 @@ pub mod tracking_data_base {
 */
 pub mod register_tracking_number_response {
     use serde::{Deserialize, Serialize};
+    use std::fmt;
 
-    #[derive(Debug, Serialize, Deserialize, Clone)]
+    #[derive(Debug, Serialize, Deserialize, Clone, Display)]
     pub struct RegisterResponse {
         pub code: i32,
         pub data: Data,

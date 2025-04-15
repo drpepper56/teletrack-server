@@ -391,7 +391,7 @@ async fn register_tracking_number(
                 Ok(register_response) => {
                     println!("tracking number registered");
 
-                    // create the relation record
+                    // create the relation record //TODO index out of bounds
                     let tracking_user_relation = tracking_number_user_relation {
                         tracking_number: tracking_details.tracking_number.clone(),
                         carrier: Some(register_response.data.accepted.unwrap()[0].carrier.clone()),
