@@ -20,6 +20,12 @@ use std::env;
 pub enum tracking_error {
     #[error("No tracking data found for your tracking number.")]
     NoDataFound,
+    #[error("Problem with api, or invalid data form sent")]
+    UnexpectedAPIerror,
+    #[error("tracking rejected")]
+    TrackingRejected,
+    #[error("the number you are trying to register is already registered")]
+    TrackingAlreadyRegistered,
     #[error("Request error: {0}")]
     ReqwestError(#[from] reqwest::Error),
     #[error("Serde error: {0}")]
@@ -36,7 +42,7 @@ pub struct tracking_client {
 // struct for getting a tracking number + carrier (optional) from client
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct tracking_number_carrier {
-    pub tracking_number: String,
+    pub number: String,
     pub carrier: Option<i32>,
 }
 
@@ -66,6 +72,8 @@ impl tracking_client {
         // load the url, @ROUTE, api key and parameters into the URL and send it
         let url = format!("{}/register", self.base_url);
 
+        println!("{}", serde_json::json!([&tracking_details]));
+
         let response = self
             .client
             .post(&url)
@@ -80,25 +88,44 @@ impl tracking_client {
             return Err(tracking_error::ReqwestError(Err(()).unwrap()));
         }
 
-        // for debugging, print the whole body of the response in the terminal
-        let body_bytes = response.bytes().await?;
-
-        println!(
-            "response: {}",
-            body_bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        );
+        let body_bytes = &response.bytes().await?;
+        // match String::from_utf8(body_bytes.to_vec()) {
+        //     Ok(text) => println!("Response text: {}", text),
+        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        // }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @TrackingResponse instance
         let response_data = serde_json::from_slice::<RegisterResponse>(&body_bytes)?;
         match response_data.code {
             // success
+            // TODO: deal with the consequences of your actions
             0 => {
-                println!("Success: {:?}", response_data);
-                Ok(response_data)
+                // Even though it's an array treat it always like only one tracking number has been passed,
+                // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
+                if Some(response_data.data.accepted.len()) == Some(1) {
+                    // tracking was accepted, added successfully
+                    println!("Success: {:?}", response_data.data.accepted[0]);
+                    Ok(response_data)
+                } else if Some(response_data.data.rejected.len()) == Some(1) {
+                    // tracking rejected, limit reached or already registered
+                    match response_data.data.rejected[0].error.code {
+                        -18019901 => {
+                            // already registered
+                            // Here it's up to the program to decide if you it wants to allow multiple users to be tracking the same number
+                            // the server will allow more than one users tracking one number (eg. sender and receiver)
+                            println!("already tracked: {:?}", response_data.data.rejected[0]);
+                            return Err(tracking_error::TrackingAlreadyRegistered);
+                            // resolve the error in references
+                        }
+                        _ => {
+                            println!("Rejected: {:?}", response_data.data.rejected[0]);
+                            return Err(tracking_error::TrackingRejected);
+                        }
+                    }
+                } else {
+                    Err(tracking_error::UnexpectedAPIerror)
+                }
             }
             // error
             1 => {
@@ -146,6 +173,8 @@ impl tracking_client {
             0 => {
                 println!("Success: {:?}", response_data);
                 Ok(response_data)
+                // TODO: deal with rejected info in general and CHANGE RETURN TYPE to the database format
+                // TODO: deal with code -18019909[delivered ages ago]
             }
             // error
             1 => {

@@ -130,6 +130,8 @@ pub mod tracking_data_base {
     }
 }
 
+// TODO: remove option wrapper from accepted and rejected arrays because it's at least an empty array always
+
 /// Register Tracking
 /*
     {
@@ -168,8 +170,9 @@ pub mod register_tracking_number_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Option<Vec<Accepted>>,
-        pub rejected: Option<Vec<Rejected>>,
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+        // pub errors: Option<Vec<RejectedError>>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
@@ -177,13 +180,13 @@ pub mod register_tracking_number_response {
         pub number: String,
         pub carrier: i32,
         pub email: Option<String>,
-        pub tag: String,
+        pub tag: Option<String>,
         pub lang: Option<String>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Rejected {
         pub number: String,
-        pub tag: String,
+        pub tag: Option<String>,
         pub error: RejectedError,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]

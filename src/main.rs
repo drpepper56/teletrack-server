@@ -141,7 +141,7 @@ async fn check_user_exists(
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
             println!("@CHECK_USER_EXISTS: user found: {:?}", user);
-            Ok(user.user_id) // Return the user ID as hex string
+            Ok(user.user_id_hash) // Return the user ID as hex string
         }
         Ok(None) => {
             println!("@CHECK_USER_EXISTS: user not found");
@@ -393,8 +393,8 @@ async fn register_tracking_number(
 
                     // create the relation record //TODO index out of bounds
                     let tracking_user_relation = tracking_number_user_relation {
-                        tracking_number: tracking_details.tracking_number.clone(),
-                        carrier: Some(register_response.data.accepted.unwrap()[0].carrier.clone()),
+                        tracking_number: tracking_details.number.clone(),
+                        carrier: Some(register_response.data.accepted[0].carrier.clone()),
                         user_id_hash: user_id_hash.clone(),
                     };
                     // put it in the database
@@ -410,11 +410,10 @@ async fn register_tracking_number(
                         // proceed to pull the tracking information now and push it to the tracking_data collection
                         Ok(_) => {
                             println!("relation record inserted");
-                            let gettrackinfo_result = track_single(
-                                data.clone(),
-                                tracking_details.clone().tracking_number,
-                            )
-                            .await;
+                            let gettrackinfo_result =
+                                track_single(data.clone(), tracking_details.clone().number).await;
+
+                            // TODO: buy something that will be shipped long time (for testing :-)
 
                             match gettrackinfo_result {
                                 // first tracking data retrieved successfully
@@ -463,27 +462,37 @@ async fn register_tracking_number(
                         }
                     }
                 }
-                Err(e) => match e {
-                    // tracking information for the number not found
-                    tracking_error::NoDataFound => {
-                        // TODO: add carrier search in a catch clause
-                        println!(
-                            "@REGISTER_TRACKING_NUMBER: tracking number not found => {}",
-                            e
-                        );
-                        HttpResponse::InternalServerError().body(e.to_string())
-                    }
-                    e => {
-                        println!("@REGISTER_TRACKING_NUMBER:{}", e);
-                        HttpResponse::InternalServerError().body(e.to_string())
-                    }
-                },
+
+                Err(tracking_error::TrackingAlreadyRegistered) => {
+                    println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
+                    // repeat the logic from above but with the parameter tracking number and ignore the carrier
+                    // TODO: if for any reason you mind there also being infinite amounts of repeated records for the same user and same number
+                    // TODO: add a check search in the insert relation record stage to prevent that from happening
+                    HttpResponse::Ok().body(
+                        serde_json::json!({"error":"tracking number already registered"})
+                            .to_string(),
+                    )
+                }
+
+                Err(tracking_error::NoDataFound) => {
+                    // TODO: add carrier search in a catch clause
+                    println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
+                    HttpResponse::InternalServerError()
+                        .body(serde_json::json!({"error":"tracking number not found"}).to_string())
+                }
+                Err(e) => {
+                    println!("@REGISTER_TRACKING_NUMBER:{}", e);
+                    HttpResponse::InternalServerError().body(e.to_string())
+                }
             }
         }
         // user doesn't exist, respond with 520
         Err(response) => response,
     }
 }
+
+/// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
+/// and the secondary function is checking if there are any other users recorded for that number, if not, untrack it on the API
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
