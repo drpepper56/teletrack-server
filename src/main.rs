@@ -9,7 +9,10 @@ mod trackingapi;
 mod webhook;
 
 use crate::{
-    my_structs::tracking_data_formats::register_tracking_number_response::RegisterResponse,
+    my_structs::tracking_data_formats::delete_tracking_number_response::DeleteTrackingResponseNumber as delete_tracking_number_response,
+    my_structs::tracking_data_formats::register_tracking_number_response::RegisterResponse as register_tracking_number_response,
+    my_structs::tracking_data_formats::retrack_stopped_number_response::RetrackStoppedNumberResponse as retrack_stopped_number_response,
+    my_structs::tracking_data_formats::stop_tracking_response::StopTrackingResponse as stop_tracking_response,
     my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
     my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
 };
@@ -25,8 +28,8 @@ use dotenv::dotenv;
 use futures::{stream::StreamExt, stream::TryStreamExt};
 use hex::encode;
 use mongodb::{
-    bson::doc,
-    options::{ClientOptions, FindOptions},
+    bson::{de, doc},
+    options::{ClientOptions, FindOneAndUpdateOptions, FindOptions},
     Client,
 };
 use notifications::{notification_service, notification_service_error};
@@ -89,11 +92,13 @@ struct user_details {
 }
 
 // struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
+// this also holds a bool that decides if the user is getting updates for the number or not
 #[derive(Serialize, Deserialize, Debug)]
 struct tracking_number_user_relation {
     tracking_number: String,
     carrier: Option<i32>,
     user_id_hash: String,
+    is_subscribed: bool,
 }
 
 /*
@@ -224,7 +229,7 @@ async fn track_single(
 async fn register_single(
     data: web::Data<app_state>,
     tracking_details: trackingapi::tracking_number_carrier,
-) -> Result<RegisterResponse, trackingapi::tracking_error> {
+) -> Result<register_tracking_number_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
     match tracking_client.register_tracking(tracking_details).await {
         Ok(data) => Ok(data),
@@ -232,9 +237,48 @@ async fn register_single(
     }
 }
 
+/// Function for calling the API to stop tracking a number
+async fn stop_tracking_single(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<stop_tracking_response, trackingapi::tracking_error> {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client.stop_tracking(&tracking_number).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
+}
+
+/// Function for calling the API to retrack a single number
+async fn retrack_stopped_number(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<retrack_stopped_number_response, trackingapi::tracking_error> {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client
+        .retrack_stopped_number(&tracking_number)
+        .await
+    {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
+}
+
+/// Function for calling the API to delete a single number from the saved numbers (destructive)
+async fn delete_number(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<delete_tracking_number_response, trackingapi::tracking_error> {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client.delete_number(&tracking_number).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-NOTIFICATION FUNCTIONS
+    NOTIFICATION FUNCTIONS
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -373,7 +417,10 @@ async fn create_user_handler(
 
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
-///TODO: make the nesting possible to look at
+// TODO: make the nesting possible to look at
+// TODO: CASE RESOLVE: tracking number attempted register for a tracking number that is already registered but it's stopped
+// TODO: buy something that will be shipped long time (for testing :-)
+// TODO: figure out what is relevant
 async fn register_tracking_number(
     client: web::Data<Client>,
     data: web::Data<app_state>,
@@ -397,6 +444,7 @@ async fn register_tracking_number(
                         tracking_number: tracking_details.number.clone(),
                         carrier: Some(register_response.data.accepted[0].carrier.clone()),
                         user_id_hash: user_id_hash.clone(),
+                        is_subscribed: true,
                     };
                     // put it in the database
                     let db = client.database("teletrack");
@@ -468,8 +516,7 @@ async fn register_tracking_number(
                 Err(tracking_error::TrackingAlreadyRegistered) => {
                     println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
                     // repeat the logic from above but with the parameter tracking number and ignore the carrier
-                    // TODO: if for any reason you mind there also being infinite amounts of repeated records for the same user and same number
-                    // TODO: add a check search in the insert relation record stage to prevent that from happening
+                    // TODO: CASE RESOLVE: tracking number attempted register for a tracking number that is already registered but it's stopped
 
                     // check if the relation already exists
                     let db = client.database("teletrack");
@@ -493,6 +540,7 @@ async fn register_tracking_number(
                                     tracking_number: tracking_details.number.clone(),
                                     carrier: None,
                                     user_id_hash: user_id_hash.clone(),
+                                    is_subscribed: true,
                                 };
                             // put it in the database
 
@@ -584,8 +632,86 @@ async fn register_tracking_number(
     }
 }
 
+/// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that
+/// number on the database before proceeding, update in two stages, turn off notifications then if no one else is linked to that number, untrack it
+// TODO: implement
+async fn stop_tracking_number(
+    client: web::Data<Client>,
+    data: web::Data<app_state>,
+    tracking_number: String,
+    request: HttpRequest,
+) -> impl Responder {
+    // check if user exists
+    match check_user_exists(client.clone(), request).await {
+        Ok(user_id_hash) => {
+            // user exists, now check if they have the number linked to them in a record
+            let db = client.database("teletrack");
+            let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+                db.collection("tracking_number_user_relation");
+            let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+
+            match collection_relations.find_one(filter.clone(), None).await {
+                Ok(Some(_)) => {
+                    println!("relation exists, proceed with stopping the tracking of the number");
+                    // change the is_subscribed value to false on the record
+                    let database_update = doc! {"$set":{"is_subscribed": false}};
+
+                    match collection_relations
+                        .update_one(filter, database_update, None)
+                        .await
+                    {
+                        Ok(result) => {
+                            // found and changed
+                            if result.modified_count > 0 {
+                                println!("successfully unsubscribed from a number by the user");
+
+                                // TODO: check if there are any other users that are linked to that file before stopping the track
+
+                                // change it so that it returns a list of all matches to that tracking number, then from there check
+                                // if the user is linked in the number in one of the documents and if there is only one document send
+                                // a call to the api to stop tracking that number
+
+                                HttpResponse::Ok().body("action successful")
+                            // only found ???
+                            } else if result.matched_count > 0 {
+                                // TODO: find what the hell is going on
+                                println!("found record but not changed");
+                                HttpResponse::InternalServerError()
+                                    .body("found record but not updated idk why")
+                            // not found (impossible)
+                            } else {
+                                println!("user-number record not found");
+                                HttpResponse::InternalServerError()
+                                    .body("user doesn't have access to that tracking number.")
+                            }
+                        }
+                        // database error
+                        Err(e) => {
+                            println!("{}", e);
+                            HttpResponse::InternalServerError().body(e.to_string())
+                        }
+                    }
+                }
+
+                Ok(None) => HttpResponse::InternalServerError()
+                    .body("user doesn't have access to that tracking number."),
+                Err(e) => {
+                    println!("database error {}", e);
+                    HttpResponse::InternalServerError().body(e.to_string())
+                }
+            }
+        }
+        Err(response) => response,
+    }
+}
+
+/// Function for retracking a stopped tracking number, will be triggered when a users switches the re activates tracking for the number on the client, there
+/// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
+// TODO: implement and move out of the handlers logically
+
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
-/// and the secondary function is checking if there are any other users recorded for that number, if not, untrack it on the API
+/// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
+// TODO: implement
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
