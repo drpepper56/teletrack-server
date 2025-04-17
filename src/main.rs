@@ -388,10 +388,11 @@ async fn register_tracking_number(
 
             // registered the tracking number with the API successfully
             match register_single(data.clone(), tracking_details_copy).await {
+                // if the registered worked fine, found and wasn't registered before
                 Ok(register_response) => {
                     println!("tracking number registered");
 
-                    // create the relation record //TODO index out of bounds
+                    // create the relation record
                     let tracking_user_relation = tracking_number_user_relation {
                         tracking_number: tracking_details.number.clone(),
                         carrier: Some(register_response.data.accepted[0].carrier.clone()),
@@ -463,18 +464,110 @@ async fn register_tracking_number(
                     }
                 }
 
+                // tracking number was already registered
                 Err(tracking_error::TrackingAlreadyRegistered) => {
                     println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
                     // repeat the logic from above but with the parameter tracking number and ignore the carrier
                     // TODO: if for any reason you mind there also being infinite amounts of repeated records for the same user and same number
                     // TODO: add a check search in the insert relation record stage to prevent that from happening
-                    HttpResponse::Ok().body(
-                        serde_json::json!({"error":"tracking number already registered"})
-                            .to_string(),
-                    )
+
+                    // check if the relation already exists
+                    let db = client.database("teletrack");
+                    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+                        db.collection("tracking_number_user_relation");
+                    let filter = doc! {"tracking_number": &tracking_details.number, "user_id_hash": &user_id_hash};
+                    match collection_relations.find_one(filter, None).await {
+                        Ok(Some(_)) => {
+                            println!("relation already exists");
+                            HttpResponse::Ok().body(
+                                serde_json::json!({"not an error":"tracking number already registered"})
+                                    .to_string(),
+                            )
+                        }
+                        Ok(None) => {
+                            println!("relation doesn't exist yet");
+
+                            // create the relation record
+                            let tracking_user_relation: tracking_number_user_relation =
+                                tracking_number_user_relation {
+                                    tracking_number: tracking_details.number.clone(),
+                                    carrier: None,
+                                    user_id_hash: user_id_hash.clone(),
+                                };
+                            // put it in the database
+
+                            let insert_result = collection_relations
+                                .insert_one(tracking_user_relation, None)
+                                .await;
+
+                            match insert_result {
+                                // relation record inserted,
+                                // proceed to pull the tracking information now and push it to the tracking_data collection
+                                Ok(_) => {
+                                    println!("relation record inserted");
+                                    let gettrackinfo_result =
+                                        track_single(data.clone(), tracking_details.clone().number)
+                                            .await;
+
+                                    // TODO: buy something that will be shipped long time (for testing :-)
+
+                                    match gettrackinfo_result {
+                                        // first tracking data retrieved successfully
+                                        // the relation collection holds this tracking info's tracking number in relation
+                                        // to the appropriate user code so save it loosely in the tracking_data collection
+                                        Ok(tracking_data) => {
+                                            println!("tracking data received");
+
+                                            // convert the tracking_data_get_info to tracking_data_database_form and save it
+                                            let tracking_data_database_form =
+                                                tracking_data.convert_to_TrackingData_DBF();
+                                            let collection_tracking_data: mongodb::Collection<
+                                                tracking_data_database_form,
+                                            > = db.collection("tracking_data");
+                                            let insert_tracking_data = collection_tracking_data
+                                                .insert_one(
+                                                    tracking_data_database_form.clone(),
+                                                    None,
+                                                )
+                                                .await;
+
+                                            match insert_tracking_data {
+                                                // first tracking data saved successfully
+                                                // return something relevant to the client
+                                                Ok(_) => {
+                                                    println!("tracking data inserted");
+                                                    // return relevant tracking information to the user
+                                                    // TODO: figure out what is relevant
+                                                    HttpResponse::Ok()
+                                                        .json(tracking_data_database_form)
+                                                }
+                                                Err(e) => {
+                                                    println!("@REGISTER_TRACKING_NUMBER: error inserting tracking data: {}", e);
+                                                    HttpResponse::InternalServerError()
+                                                        .body(e.to_string())
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            println!("@REGISTER_TRACKING_NUMBER: error getting the tracking data: {}", e);
+                                            HttpResponse::InternalServerError().body(e.to_string())
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("@REGISTER_TRACKING_NUMBER: error inserting relation record: {}", e);
+                                    HttpResponse::InternalServerError().body(e.to_string())
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("database error {}", e);
+                            HttpResponse::InternalServerError().body(e.to_string())
+                        }
+                    }
                 }
 
-                Err(tracking_error::NoDataFound) => {
+                Err(tracking_error::UnexpectedError) => {
                     // TODO: add carrier search in a catch clause
                     println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
                     HttpResponse::InternalServerError()
@@ -627,8 +720,8 @@ async fn main() -> std::io::Result<()> {
             .service(create_user_options)
             .service(register_tracking_number_options)
     })
-    // .bind(("127.0.0.1", 8080))?
-    .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
+    .bind(("127.0.0.1", 8080))?
+    // .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
     .run()
     .await
 }

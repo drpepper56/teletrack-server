@@ -5,7 +5,7 @@ pub mod tracking_data_base {
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct track_info {
         // here was the problem that took a whole day
-        pub lastGatherTime: String, //TODO: this can go tits up
+        pub lastGatherTime: Option<String>, //TODO: this can go tits up
         pub shipping_info: shipping_info,
         pub latest_status: status,
         pub latest_event: event,
@@ -229,8 +229,61 @@ pub mod stop_tracking_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Option<Vec<Accepted>>,
-        pub rejected: Option<Vec<Rejected>>,
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Accepted {
+        pub number: String,
+        pub carrier: i32,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Rejected {
+        pub number: String,
+        pub error: RejectedError,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RejectedError {
+        pub code: i32,
+        pub message: String,
+    }
+}
+
+/// Re-Track Number
+/*
+    {
+        "code": 0,
+        "data": {
+            "accepted": [
+            {
+                "number": "RR123456789CN",
+                "carrier": 3011
+            }
+            ],
+            "rejected": [
+                {
+                "number": "21213123123230",
+                "error": {
+                "code": -18019904,
+                "message": "Retrack is not allowed. You can only retrack stopped number."
+                }
+            }
+            ]
+        }
+    }
+*/
+pub mod retrack_stopped_number_response {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct RetrackStoppedNumberResponse {
+        pub code: i32,
+        pub data: Data,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Data {
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
@@ -282,8 +335,8 @@ pub mod delete_tracking_number_response {
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Data {
-        pub accepted: Option<Vec<Accepted>>,
-        pub rejected: Option<Vec<Rejected>>,
+        pub accepted: Vec<Accepted>,
+        pub rejected: Vec<Rejected>,
     }
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct Accepted {
@@ -323,7 +376,7 @@ pub mod tracking_data_get_info {
 
     impl TrackingResponse {
         pub fn convert_to_TrackingData_DBF(&self) -> TrackingData_DBF {
-            let accepted_package = self.data.accepted.as_ref().unwrap().first().unwrap();
+            let accepted_package = self.data.accepted.first().expect("bad format of GETTRACKINFO method, error happened in converting it to the database format");
             TrackingData_DBF {
                 code: self.code.clone(),
                 data: PackageData {
@@ -339,8 +392,8 @@ pub mod tracking_data_get_info {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct ResponseData {
-        pub accepted: Option<Vec<AcceptedPackage>>,
-        pub rejected: Option<Vec<RejectedPackage>>, // Empty array in the example
+        pub accepted: Vec<AcceptedPackage>,
+        pub rejected: Vec<RejectedPackage>, // Empty array in the example
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -360,8 +413,8 @@ pub mod tracking_data_get_info {
     }
     #[derive(Debug, Serialize, Deserialize)]
     pub struct RejectedError {
-        code: i32,
-        message: String,
+        pub code: i32,
+        pub message: String,
     }
 }
 
