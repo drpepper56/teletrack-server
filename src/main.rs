@@ -91,6 +91,12 @@ struct user_details {
     user_name: String,
 }
 
+// just the tracking number
+#[derive(Serialize, Deserialize, Debug)]
+struct just_the_tracking_number {
+    number: String,
+}
+
 // struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
 // this also holds a bool that decides if the user is getting updates for the number or not
 #[derive(Serialize, Deserialize, Debug)]
@@ -146,7 +152,7 @@ async fn check_user_exists(
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
             println!("@CHECK_USER_EXISTS: user found: {:?}", user);
-            Ok(user.user_id_hash) // Return the user ID as hex string
+            Ok(user.user_id_hash) // Return the user ID hash as hex string
         }
         Ok(None) => {
             println!("@CHECK_USER_EXISTS: user not found");
@@ -424,7 +430,6 @@ async fn create_user_handler(
 
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
-// TODO: make the nesting possible to look at
 // TODO: buy something that will be shipped long time (for testing :-)
 // TODO: figure out what is relevant
 // TODO: add carrier search in a catch clause
@@ -535,8 +540,8 @@ async fn register_tracking_number(
     let filter = doc! {"data.number": &tracking_details.number};
     let _ = match collection_tracking_data.delete_many(filter, None).await {
         // continue
-        Ok(_) => {
-            println!("tracking data deleted");
+        Ok(delete_result) => {
+            println!("deleted {} tracking data", delete_result.deleted_count);
             Ok(())
         }
         Err(e) => {
@@ -577,71 +582,64 @@ async fn register_tracking_number(
 // TODO: implement
 async fn stop_tracking_number(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
-    tracking_number: String,
-    request: HttpRequest,
+    data: Json<just_the_tracking_number>,
+    request: HttpRequest, // user in here
 ) -> impl Responder {
     // check if user exists
-    match check_user_exists(client.clone(), request).await {
-        Ok(user_id_hash) => {
-            // user exists, now check if they have the number linked to them in a record
-            let db = client.database("teletrack");
-            let collection_relations: mongodb::Collection<tracking_number_user_relation> =
-                db.collection("tracking_number_user_relation");
-            let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+    //
 
-            match collection_relations.find_one(filter.clone(), None).await {
-                Ok(Some(_)) => {
-                    println!("relation exists, proceed with stopping the tracking of the number");
-                    // change the is_subscribed value to false on the record
-                    let database_update = doc! {"$set":{"is_subscribed": false}};
+    // check if they have the number linked to them in a record
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    let filter = doc! {"tracking_number": data.into_inner().number, "user_id_hash": &user_id_hash};
+    let permission_check = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(relation_record)) = permission_check {
+        println!(
+            "relation record found, subscribed: {}",
+            relation_record.is_subscribed
+        );
+    } else if let Ok(None) = permission_check {
+        println!("relation record not found, no permission");
+        return HttpResponse::InternalServerError()
+            .body("user doesn't have access to that tracking number.");
+    } else if let Err(e) = permission_check {
+        println!("database error {}", e);
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    //
 
-                    match collection_relations
-                        .update_one(filter, database_update, None)
-                        .await
-                    {
-                        Ok(result) => {
-                            // found and changed
-                            if result.modified_count > 0 {
-                                println!("successfully unsubscribed from a number by the user");
-
-                                // TODO: check if there are any other users that are linked to that file before stopping the track
-
-                                // change it so that it returns a list of all matches to that tracking number, then from there check
-                                // if the user is linked in the number in one of the documents and if there is only one document send
-                                // a call to the api to stop tracking that number
-
-                                HttpResponse::Ok().body("action successful")
-                            // only found ???
-                            } else if result.matched_count > 0 {
-                                // TODO: find what the hell is going on
-                                println!("found record but not changed");
-                                HttpResponse::InternalServerError()
-                                    .body("found record but not updated idk why")
-                            // not found (impossible)
-                            } else {
-                                println!("user-number record not found");
-                                HttpResponse::InternalServerError()
-                                    .body("user doesn't have access to that tracking number.")
-                            }
-                        }
-                        // database error
-                        Err(e) => {
-                            println!("{}", e);
-                            HttpResponse::InternalServerError().body(e.to_string())
-                        }
-                    }
-                }
-
-                Ok(None) => HttpResponse::InternalServerError()
-                    .body("user doesn't have access to that tracking number."),
-                Err(e) => {
-                    println!("database error {}", e);
-                    HttpResponse::InternalServerError().body(e.to_string())
-                }
-            }
+    // send request to the DB to change the is_subscribed value to false
+    let database_update = doc! {"$set":{"is_subscribed": false}};
+    let update_result = match collection_relations
+        .update_one(filter, database_update, None)
+        .await
+    {
+        Ok(result) => Ok(result),
+        // database error
+        Err(e) => {
+            println!("{}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-        Err(response) => response,
+    };
+    //
+
+    // resolve the response from the database, it's a bit weird here
+    if update_result.unwrap().modified_count.clone() > 0 {
+        println!("successfully unsubscribed from a number by the user");
+        HttpResponse::Ok()
+            .body("action successful, user won't be notified of updates to this tracking number ")
+        // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
+    } else {
+        // not found (impossible)
+        println!("found but not changed, was already set to false");
+        HttpResponse::InternalServerError().body("already not subscribed to that number")
     }
 }
 
@@ -690,6 +688,20 @@ async fn create_user_options() -> impl Responder {
 }
 #[options("/register_tracking_number")]
 async fn register_tracking_number_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/stop_tracking_number")]
+async fn stop_tracking_number_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -776,6 +788,10 @@ async fn main() -> std::io::Result<()> {
                 "/register_tracking_number",
                 web::post().to(register_tracking_number),
             )
+            .route(
+                "/stop_tracking_number",
+                web::post().to(stop_tracking_number),
+            )
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
@@ -785,6 +801,7 @@ async fn main() -> std::io::Result<()> {
             .service(write_options)
             .service(create_user_options)
             .service(register_tracking_number_options)
+            .service(stop_tracking_number_options)
     })
     .bind(("127.0.0.1", 8080))?
     // .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
