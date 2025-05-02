@@ -472,27 +472,17 @@ async fn register_tracking_number(
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
     let filter = doc! {"tracking_number": &tracking_details.number, "user_id_hash": &user_id_hash};
-    let _ = match collection_relations.find_one(filter.clone(), None).await {
-        // continue
-        Ok(None) => {
-            println!("relation doesn't exist yet");
-            Ok(())
-        }
-        Ok(Some(_)) => {
-            println!("relation already exists");
-            Err(HttpResponse::InternalServerError().body(
-                serde_json::json!({"error":"tracking number already registered for this user"})
-                    .to_string(),
-            ))
-        }
-        Err(e) => {
-            println!(
-                "database error in trying to find if a duplicate exists {}",
-                e
-            );
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
-        }
-    };
+    let duplicate_relation_search = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(_)) = duplicate_relation_search {
+        println!("relation already exists");
+        return HttpResponse::InternalServerError().body(
+            serde_json::json!({"error":"tracking number already registered for this user"})
+                .to_string(),
+        );
+    } else if let Err(e) = duplicate_relation_search {
+        println!("database error: {}", e);
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
     //
 
     // create the relation record and put it in the database

@@ -209,7 +209,8 @@ impl tracking_client {
                 // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
                 if Some(response_data.data.accepted.len()) == Some(1) {
                     // TODO: CHANGE RETURN TYPE to the database format
-                    println!("get track info success: {:?}", response_data);
+                    // println!("get track info success: {:?}", response_data);
+                    // println!("get track info success");
                     Ok(response_data)
                 } else if Some(response_data.data.rejected.len()) == Some(1) {
                     // get track info rejected, tracking info failed to be delivered
