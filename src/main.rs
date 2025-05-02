@@ -671,7 +671,6 @@ async fn stop_tracking_number(
 
 /// Function for retracking a stopped tracking number, will be triggered when a users switches the tracking ON for the number on the client, there
 /// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
-// TODO: implement and move out of the handlers logically
 async fn retrack_stopped_number(
     client: web::Data<Client>,
     data: web::Data<app_state>,
@@ -769,7 +768,91 @@ async fn retrack_stopped_number(
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
 /// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
 // TODO: implement
+async fn delete_tracking_number(
+    client: web::Data<Client>,
+    data: web::Data<app_state>,
+    tracking_data: Json<just_the_tracking_number>,
+    request: HttpRequest, // user in here
+) -> impl Responder {
+    // check if user exists
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+    //
 
+    // check if they have the number linked to them in a record
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    let tracking_number = tracking_data.into_inner().number.clone();
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+    let permission_check = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(_)) = permission_check {
+        println!("relation record found");
+    } else if let Ok(None) = permission_check {
+        println!("relation record not found, nothing to delete");
+        return HttpResponse::InternalServerError()
+            .body("user doesn't have have a record with this tracking number.");
+    } else if let Err(e) = permission_check {
+        println!("database error {}", e);
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    //
+
+    // send request to the DB to remove the relation record
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+    let update_result = match collection_relations.delete_one(filter, None).await {
+        Ok(update_result) => Ok(update_result),
+        // database error
+        Err(e) => {
+            println!("{}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    };
+    //
+
+    // resolve the delete response from the database
+    if update_result.unwrap().deleted_count.clone() > 0 {
+        println!("successfully deleted the relation record from the database");
+
+        // check if there are any other relation docs with that number
+        let filter = doc! {"tracking_number": &tracking_number};
+        let other_relations_count = match collection_relations.count_documents(filter, None).await {
+            Ok(res) => Ok(res),
+            Err(e) => {
+                println!("{}", e);
+                Err(HttpResponse::InternalServerError().body(e.to_string()))
+            }
+        };
+        //
+
+        // check the response from the database and delete the number from the API register if there are none
+        if other_relations_count.unwrap() == 0 {
+            println!("would delete but it's your only number registered for testing")
+            //TODO: put this back in later
+            // let _ = match delete_number_single(data.clone(), tracking_number).await {
+            //     Ok(_) => {
+            //         println!("number has been deleted on the API");
+            //         Ok(())
+            //     }
+            //     Err(e) => {
+            //         println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
+            //         Err(e)
+            //     }
+            // };
+        }
+        //
+
+        HttpResponse::Ok().finish() // professionalism
+    } else {
+        // didn't delete
+        println!("didn't delete the relation record because nothing was found");
+        HttpResponse::InternalServerError().body("didn't delete")
+    }
+}
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -847,7 +930,20 @@ async fn retrack_stopped_number_options() -> impl Responder {
         ))
         .finish()
 }
-
+#[options("/delete_tracking_number")]
+async fn delete_tracking_number_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     MAiN
@@ -929,6 +1025,10 @@ async fn main() -> std::io::Result<()> {
                 "/retrack_stopped_number",
                 web::post().to(retrack_stopped_number),
             )
+            .route(
+                "/delete_tracking_number",
+                web::post().to(delete_tracking_number),
+            )
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
@@ -940,6 +1040,7 @@ async fn main() -> std::io::Result<()> {
             .service(register_tracking_number_options)
             .service(stop_tracking_number_options)
             .service(retrack_stopped_number_options)
+            .service(delete_tracking_number_options)
     })
     .bind(("127.0.0.1", 8080))?
     // .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
