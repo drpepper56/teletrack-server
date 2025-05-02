@@ -478,3 +478,116 @@ pub mod tracking_data_database_form {
         pub track_info: track_info,
     }
 }
+
+/// Search info about a registered tracking number, useful for checking if it's stopped on the API
+/*
+    Example from the API Docs:
+    {
+        "page": {
+            "data_total": 43,
+            "page_total": 2,
+            "page_no": 1,
+            "page_size": 40
+        },
+        "code": 0,
+        "data": {
+            "accepted": [
+            {
+                "number": "RR123456789CN",
+                "param": null,
+                "param_type": "None",
+                "data_origin": "Api",
+                "carrier": 3011,
+                "shipping_country": "CN",
+                "final_carrier": 0,
+                "recipient_country": "RU",
+                "register_time": "2022-03-14T07:45:38Z",
+                "tracking_status": "Tracking",
+                "package_status": "Delivered",
+                "track_time": "2022-03-14T07:45:22Z",
+                "push_time": "2022-03-14T07:47:42Z",
+                "push_status": "Success",
+                "push_status_code":200,
+                "stop_track_time": null,
+                "stop_track_reason": null,
+                "is_retracked": false,
+                "carrier_change_count": 0,
+                "tag": null,
+                "email":"",
+                "order_no": "86574382938",
+                "order_time": "2022-04-25T22:22:47+05:00",
+                "lang":"",
+                "remark": "test",
+                "latest_event_time": "2023-08-05T10:00:21+05:00",
+                "latest_event_info": "FAISALABAD,Shipment has been Delivered. Delivery Date & Time Aug 5 2023 9:48AM and Received By: Shahzad",
+                "days_after_order ":2,
+                "days_after_last_update ":null,
+                "days_of_transit ":2,
+                "days_of_transit_done ":2,
+                "delievery_time": "2023-08-05T05:00:21Z",
+                "pickup_time": ""
+            }
+        ]
+    }
+
+}
+
+*/
+pub mod tracking_number_meta_data {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct NumberStatusCheck {
+        pub page: Page,
+        pub code: i32,
+        pub data: PageData,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct Page {
+        pub data_total: i32,
+        pub page_total: i32,
+        pub page_no: i32,
+        pub page_size: i32,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct PageData {
+        pub accepted: Vec<AcceptedPage>,
+    }
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct AcceptedPage {
+        pub number: Option<String>,
+        pub param: Option<()>,
+        pub param_type: Option<String>,
+        pub data_origin: Option<String>,
+        pub carrier: i32,
+        pub shipping_country: Option<String>,
+        pub final_carrier: i32,
+        pub recipient_country: Option<String>,
+        pub register_time: Option<String>,
+        pub tracking_status: String,
+        pub package_status: Option<String>,
+        pub track_time: Option<String>,
+        pub push_time: Option<String>,
+        pub push_status: Option<String>,
+        pub push_status_code: i32,
+        pub stop_track_time: Option<String>,
+        pub stop_track_reason: Option<String>,
+        pub is_retracked: bool,
+        pub carrier_change_count: i32,
+        pub tag: Option<String>,
+        pub email: Option<String>,
+        pub order_no: Option<String>,
+        pub order_time: Option<String>,
+        pub lang: Option<String>,
+        pub remark: Option<String>,
+        pub latest_event_time: Option<String>,
+        pub latest_event_info: Option<String>,
+        pub days_after_order: Option<String>,
+        pub days_after_last_update: Option<String>,
+        pub days_of_transit: Option<String>,
+        pub days_of_transit_done: Option<String>,
+        pub delievery_time: Option<String>,
+        pub pickup_time: Option<String>,
+    }
+}

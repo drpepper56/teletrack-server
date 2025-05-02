@@ -15,6 +15,7 @@ use crate::{
     my_structs::tracking_data_formats::stop_tracking_response::StopTrackingResponse as stop_tracking_response,
     my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
     my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
+    my_structs::tracking_data_formats::tracking_number_meta_data::NumberStatusCheck as number_status_check,
 };
 use actix_cors::Cors;
 use actix_web::{
@@ -284,6 +285,18 @@ async fn delete_number_single(
 ) -> Result<delete_tracking_number_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
     match tracking_client.delete_number(&tracking_number).await {
+        Ok(data) => Ok(data),
+        Err(e) => Err(e),
+    }
+}
+
+/// Function for calling the API to check the status and other information about a number that is registered
+async fn check_number_status_single(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<number_status_check, trackingapi::tracking_error> {
+    let tracking_client = data.tracking_client.clone();
+    match tracking_client.get_number_metadata(&tracking_number).await {
         Ok(data) => Ok(data),
         Err(e) => Err(e),
     }
@@ -581,7 +594,8 @@ async fn register_tracking_number(
 /// number on the database before proceeding, update in two stages, turn off notifications then if no one else is linked to that number, untrack it
 async fn stop_tracking_number(
     client: web::Data<Client>,
-    data: Json<just_the_tracking_number>,
+    data: web::Data<app_state>,
+    tracking_data: Json<just_the_tracking_number>,
     request: HttpRequest, // user in here
 ) -> impl Responder {
     // check if user exists
@@ -597,7 +611,8 @@ async fn stop_tracking_number(
     let db = client.database("teletrack");
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
-    let filter = doc! {"tracking_number": data.into_inner().number, "user_id_hash": &user_id_hash};
+    let tracking_number = tracking_data.into_inner().number.clone();
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     let permission_check = collection_relations.find_one(filter.clone(), None).await;
     if let Ok(Some(relation_record)) = permission_check {
         println!(
@@ -632,9 +647,21 @@ async fn stop_tracking_number(
     // resolve the response from the database, it's a bit weird here
     if update_result.unwrap().modified_count.clone() > 0 {
         println!("successfully unsubscribed from a number by the user");
+        // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
+        let _ = match stop_tracking_single(data.clone(), tracking_number.clone()).await {
+            Ok(_) => {
+                println!("number has been stopped on the API");
+                Ok(())
+            }
+            Err(e) => {
+                println!("@STOP_TRACKING_NUMBER: error stopping_number: {},", e);
+                Err(e)
+            }
+        };
+        //
+
         HttpResponse::Ok()
             .body("action successful, user won't be notified of updates to this tracking number ")
-        // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
     } else {
         // not found (impossible)
         println!("found but not changed, was already set to false");
@@ -642,12 +669,13 @@ async fn stop_tracking_number(
     }
 }
 
-/// Function for retracking a stopped tracking number, will be triggered when a users switches the re activates tracking for the number on the client, there
+/// Function for retracking a stopped tracking number, will be triggered when a users switches the tracking ON for the number on the client, there
 /// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
 // TODO: implement and move out of the handlers logically
 async fn retrack_stopped_number(
     client: web::Data<Client>,
-    data: Json<just_the_tracking_number>,
+    data: web::Data<app_state>,
+    tracking_data: Json<just_the_tracking_number>,
     request: HttpRequest, // user in here
 ) -> impl Responder {
     // check if user exists
@@ -663,7 +691,8 @@ async fn retrack_stopped_number(
     let db = client.database("teletrack");
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
-    let filter = doc! {"tracking_number": data.into_inner().number, "user_id_hash": &user_id_hash};
+    let tracking_number = tracking_data.into_inner().number.clone();
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     let permission_check = collection_relations.find_one(filter.clone(), None).await;
     if let Ok(Some(relation_record)) = permission_check {
         println!(
@@ -698,9 +727,38 @@ async fn retrack_stopped_number(
     // resolve the response from the database, it's a bit weird here
     if update_result.unwrap().modified_count.clone() > 0 {
         println!("successfully subscribed to a number by the user");
+
+        // check if the number is actually active on the API
+        let number_status =
+            match check_number_status_single(data.clone(), tracking_number.clone()).await {
+                Ok(number_status) => Ok(number_status),
+                Err(e) => {
+                    println!(
+                        "@RETRACK_STOPPED_NUMBER: error getting the number status data: {}",
+                        e
+                    );
+                    Err(e)
+                }
+            };
+        //
+
+        // activate it if it's stopped
+        if number_status.unwrap().data.accepted[0].tracking_status == "Stopped".to_string() {
+            let _ = match retrack_stopped_number_single(data.clone(), tracking_number).await {
+                Ok(_) => {
+                    println!("number has been re-tracked on the API");
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("@RETRACK_STOPPED_NUMBER: error re-tracking_number: {},", e);
+                    Err(e)
+                }
+            };
+        }
+        //
+
         HttpResponse::Ok()
             .body("action successful, user will be notified of updates to this tracking number ")
-        // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
     } else {
         // not found (impossible)
         println!("found but not changed, was already set to true");

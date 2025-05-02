@@ -9,6 +9,7 @@ use crate::{
     my_structs::tracking_data_formats::retrack_stopped_number_response::RetrackStoppedNumberResponse as retrack_stopped_number_response,
     my_structs::tracking_data_formats::stop_tracking_response::StopTrackingResponse as stop_tracking_response,
     my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
+    my_structs::tracking_data_formats::tracking_number_meta_data::NumberStatusCheck as number_status_check,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -457,6 +458,69 @@ impl tracking_client {
                         }
                     }
                 } else {
+                    Err(tracking_error::UnexpectedAPIerror)
+                }
+            }
+            // error
+            1 => {
+                println!("{}: {:?}", response_data.code, response_data);
+                return Err(tracking_error::SerdeError(Err(()).unwrap()));
+            }
+            // unexpected error
+            _ => Err(tracking_error::UnexpectedError),
+        }
+    }
+
+    /// Get info about a tracking number (meta data)
+    pub async fn get_number_metadata(
+        &self,
+        tracking_number: &str,
+    ) -> Result<number_status_check, tracking_error> {
+        // Create the body for the HTTP request since the api doesn't use a web endpoint
+        // load the url, @ROUTE, api key and parameters into the URL and send it
+        let url = format!("{}/gettracklist", self.base_url);
+
+        // println!("{}", serde_json::json!([&tracking_details]));
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("17token", &self.api_key)
+            .json(&serde_json::json!({
+                "number": tracking_number
+            }))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            println!("Error: {}", response.status());
+            return Err(tracking_error::ReqwestError(Err(()).unwrap()));
+        }
+
+        let body_bytes = &response.bytes().await?;
+        // test print whole body
+        match String::from_utf8(body_bytes.to_vec()) {
+            Ok(text) => println!("Response text: {}", text),
+            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        }
+
+        // Parse the json of the response into the structures created with the 17track api docs
+        // and return the @number_status_check instance
+        let response_data = serde_json::from_slice::<number_status_check>(&body_bytes)?;
+        match response_data.code {
+            // success
+            0 => {
+                // Even though it's an array treat it always like only one tracking number has been passed,
+                // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
+                if Some(response_data.data.accepted.len()) == Some(1) {
+                    println!(
+                        "data about your number found: {:?}",
+                        response_data.data.accepted[0]
+                    );
+                    Ok(response_data)
+                } else {
+                    println!("{:?}", response_data);
                     Err(tracking_error::UnexpectedAPIerror)
                 }
             }
