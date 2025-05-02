@@ -23,6 +23,8 @@ use std::env;
 pub enum tracking_error {
     #[error("unexpected error happened, check logs or run more verbose.")]
     UnexpectedError,
+    #[error("API couldn't find the API number, retry with carrier number.")]
+    TrackingNumberNotFoundByAPI,
     #[error("Problem with api, or invalid data form sent")]
     UnexpectedAPIerror,
     #[error("the number you are trying to query may not ready yet, try again later or wait of the info to come trough the WEBHOOK")]
@@ -165,6 +167,7 @@ impl tracking_client {
     }
 
     /// Pull tracking information for one tracking number, works only after a number has been registered
+    // TODO: force retrack when getting a response that the number has been stopped, then either re send the request or make it come via the webhook with a tag to know what it's for
     pub async fn gettrackinfo_pull(
         &self,
         tracking_number: &str,
