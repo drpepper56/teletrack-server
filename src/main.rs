@@ -263,7 +263,7 @@ async fn stop_tracking_single(
 }
 
 /// Function for calling the API to retrack a single number
-async fn retrack_stopped_number(
+async fn retrack_stopped_number_single(
     data: web::Data<app_state>,
     tracking_number: String,
 ) -> Result<retrack_stopped_number_response, trackingapi::tracking_error> {
@@ -278,7 +278,7 @@ async fn retrack_stopped_number(
 }
 
 /// Function for calling the API to delete a single number from the saved numbers (destructive)
-async fn delete_number(
+async fn delete_number_single(
     data: web::Data<app_state>,
     tracking_number: String,
 ) -> Result<delete_tracking_number_response, trackingapi::tracking_error> {
@@ -579,7 +579,6 @@ async fn register_tracking_number(
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that
 /// number on the database before proceeding, update in two stages, turn off notifications then if no one else is linked to that number, untrack it
-// TODO: implement
 async fn stop_tracking_number(
     client: web::Data<Client>,
     data: Json<just_the_tracking_number>,
@@ -646,6 +645,68 @@ async fn stop_tracking_number(
 /// Function for retracking a stopped tracking number, will be triggered when a users switches the re activates tracking for the number on the client, there
 /// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
 // TODO: implement and move out of the handlers logically
+async fn retrack_stopped_number(
+    client: web::Data<Client>,
+    data: Json<just_the_tracking_number>,
+    request: HttpRequest, // user in here
+) -> impl Responder {
+    // check if user exists
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+    //
+
+    // check if they have the number linked to them in a record
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    let filter = doc! {"tracking_number": data.into_inner().number, "user_id_hash": &user_id_hash};
+    let permission_check = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(relation_record)) = permission_check {
+        println!(
+            "relation record found, subscribed: {}",
+            relation_record.is_subscribed
+        );
+    } else if let Ok(None) = permission_check {
+        println!("relation record not found, no permission");
+        return HttpResponse::InternalServerError()
+            .body("user doesn't have access to that tracking number.");
+    } else if let Err(e) = permission_check {
+        println!("database error {}", e);
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    //
+
+    // send request to the DB to change the is_subscribed value to true
+    let database_update = doc! {"$set":{"is_subscribed": true}};
+    let update_result = match collection_relations
+        .update_one(filter, database_update, None)
+        .await
+    {
+        Ok(result) => Ok(result),
+        // database error
+        Err(e) => {
+            println!("{}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    };
+    //
+
+    // resolve the response from the database, it's a bit weird here
+    if update_result.unwrap().modified_count.clone() > 0 {
+        println!("successfully subscribed to a number by the user");
+        HttpResponse::Ok()
+            .body("action successful, user will be notified of updates to this tracking number ")
+        // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
+    } else {
+        // not found (impossible)
+        println!("found but not changed, was already set to true");
+        HttpResponse::InternalServerError().body("already subscribed to that number")
+    }
+}
 
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
 /// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
@@ -702,6 +763,20 @@ async fn register_tracking_number_options() -> impl Responder {
 }
 #[options("/stop_tracking_number")]
 async fn stop_tracking_number_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/retrack_stopped_number")]
+async fn retrack_stopped_number_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -792,6 +867,10 @@ async fn main() -> std::io::Result<()> {
                 "/stop_tracking_number",
                 web::post().to(stop_tracking_number),
             )
+            .route(
+                "/retrack_stopped_number",
+                web::post().to(retrack_stopped_number),
+            )
             // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
             .route(
                 "/notify/{user_id}",
@@ -802,6 +881,7 @@ async fn main() -> std::io::Result<()> {
             .service(create_user_options)
             .service(register_tracking_number_options)
             .service(stop_tracking_number_options)
+            .service(retrack_stopped_number_options)
     })
     .bind(("127.0.0.1", 8080))?
     // .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
