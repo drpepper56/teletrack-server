@@ -28,10 +28,10 @@ pub async fn handle_webhook(
         data.webhook_secret
     );
 
-    // println!("Received headers:");
-    // for (name, value) in request.headers().iter() {
-    //     println!("  {}: {:?}", name, value);
-    // }
+    println!("Received headers:");
+    for (name, value) in request.headers().iter() {
+        println!("  {}: {:?}", name, value);
+    }
 
     // print the whole boomboclat thing
     println!("Full Webhook Payload: {:?}", payload);
