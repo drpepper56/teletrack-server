@@ -28,8 +28,10 @@ pub enum tracking_error {
     TrackingNumberNotFoundByAPI,
     #[error("Problem with api, or invalid data form sent")]
     UnexpectedAPIerror,
+    #[error("the number is for tracking a package that is marked as delivered, no new information will come and the number cannot be retracked")]
+    AlreadyDelivered,
     #[error("the number you are trying to query may not ready yet, try again later or wait of the info to come trough the WEBHOOK")]
-    NumberMaybeNotReady,
+    InfoNotReady,
     #[error("tracking rejected")]
     GetTrackInfoError,
     #[error("failed to fetch the tracking info from the api for your number")]
@@ -38,7 +40,7 @@ pub enum tracking_error {
     ReTrackRejectedAlreadyTracked,
     #[error("the number you are trying to stop tracking is already stopped or it doesn't exist")]
     ReTrackRejectedAlreadyRetrackedBefore,
-    #[error("the number you are trying to stop tracking is already stopped or it doesn't exist")]
+    #[error("error trying to re-track a number")]
     RetrackError,
     #[error("error trying to stop tracking a number")]
     TrackingStopError,
@@ -140,10 +142,7 @@ impl tracking_client {
                             // already registered
                             // Here it's up to the program to decide if you it wants to allow multiple users to be tracking the same number
                             // the server will allow more than one users tracking one number (eg. sender and receiver)
-                            println!(
-                                "number is already tracked: {:?}",
-                                response_data.data.rejected[0]
-                            );
+                            println!("number is already tracked on the API");
                             return Err(tracking_error::TrackingAlreadyRegistered);
                             // resolve the error in references
                         }
@@ -205,81 +204,53 @@ impl tracking_client {
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @tracking_data_get_info instance
         let response_data = serde_json::from_slice::<tracking_data_get_info>(&body_bytes)?;
-        match response_data.code {
-            // success
-            0 => {
-                // Even though it's an array treat it always like only one tracking number has been passed,
-                // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
-                if Some(response_data.data.accepted.len()) == Some(1) {
-                    // TODO: CHANGE RETURN TYPE to the database format
-                    // println!("get track info success: {:?}", response_data);
-                    // println!("get track info success");
-                    Ok(response_data)
-                } else if Some(response_data.data.rejected.len()) == Some(1) {
-                    // get track info rejected, tracking info failed to be delivered
-                    match response_data.data.rejected[0].error.code {
-                        // TODO: deal with code -18019909[delivered ages ago] // see if handled
-                        -18019909 => {
+
+        // throw error if the API request wasn't processed
+        if response_data.code == 1 {
+            println!("CODE 1 FROM API: {:?}", response_data);
+            return Err(tracking_error::UnexpectedAPIerror);
+        }
+
+        if response_data.data.accepted.len() == 1 {
+            // get track accepted, return the info
+            Ok(response_data)
+        } else {
+            // get track info rejected, process the error
+            match response_data.data.rejected[0].error.code {
+                -18019909 => {
+                    println!("@GET_TRACKING_INFO: no tracking info at this time...");
+                    //
+                    // try to set the number to tracked
+                    match self.retrack_stopped_number(tracking_number).await {
+                        Ok(_result) => {
+                            // request for the track info again, recursive
+                            Box::pin(self.gettrackinfo_pull(tracking_number))
+                                .await
+                                .map_err(|_| tracking_error::GetTrackInfoError)
+                        }
+                        Err(tracking_error::ReTrackRejectedAlreadyTracked) => {
                             println!(
-                                "get track info error: THE NUMBER YOU ARE QUERYING MAY NOT BE READY IN THE API YET, OR IT'S BEEN STOPPED BY A REQUEST {:?}",
-                                response_data.data.rejected[0]
+                                "@GET_TRACKING_INFO: number is tracked but not ready on the API"
                             );
-                            println!("retrying with retrack now...");
-                            // try to set the number to tracked
-                            let retrack_result = self.retrack_stopped_number(tracking_number).await;
-                            match retrack_result {
-                                Ok(result) => {
-                                    match result.code {
-                                        0 => {
-                                            if Some(response_data.data.rejected.len()) == Some(1) {
-                                                match response_data.data.rejected[0].error.code {
-                                                    -18019904 => {
-                                                        println!(
-                                                            "retrack failed: number is not stopped, NOT READY ON THE API"
-                                                        );
-                                                        Err(tracking_error::RetrackError)
-                                                    }
-                                                    -18019905 => {
-                                                        println!(
-                                                            "retrack failed: re-tracked once before and not allowed to do it again"
-                                                        );
-                                                        Err(tracking_error::RetrackError)
-                                                    }
-                                                    _ => Err(tracking_error::RetrackError),
-                                                }
-                                            } else {
-                                                println!("number has been re-tracked on the API");
-                                                // request for the track info again, recursive
-                                                Box::pin(self.gettrackinfo_pull(tracking_number))
-                                                    .await
-                                                    .map_err(|_| tracking_error::GetTrackInfoError)
-                                            }
-                                        }
-                                        _ => {
-                                            println!("retrack after get_info_pull failed, possibly second sequence and number is not ready on the API yet, retry later");
-                                            Err(tracking_error::RetrackError)
-                                        }
-                                    }
-                                }
-                                Err(e) => Err(tracking_error::RetrackError),
-                            }
+                            // TODO: add async function to retry in a few minutes
+                            Err(tracking_error::InfoNotReady)
                         }
-                        _ => {
-                            println!("get track info error: {:?}", response_data.data.rejected[0]);
-                            return Err(tracking_error::GetTrackInfoError);
+                        Err(tracking_error::ReTrackRejectedAlreadyRetrackedBefore) => {
+                            // TODO: add tracking_error::AlreadyDelivered if it helps
+                            println!("@GET_TRACKING_INFO: number is dead, stopped and retracked once before");
+                            Err(tracking_error::ReTrackRejectedAlreadyRetrackedBefore)
                         }
+                        Err(e) => Err(e),
                     }
-                } else {
-                    Err(tracking_error::UnexpectedAPIerror)
+                }
+                _ => {
+                    println!(
+                        "get track info unexpected error: {:?}",
+                        response_data.data.rejected[0]
+                    );
+                    return Err(tracking_error::GetTrackInfoError);
                 }
             }
-            // error
-            1 => {
-                println!("{}: {:?}", response_data.code, response_data);
-                return Err(tracking_error::SerdeError(Err(()).unwrap()));
-            }
-            // unexpected error
-            _ => Err(tracking_error::UnexpectedError),
         }
     }
 
@@ -389,10 +360,10 @@ impl tracking_client {
 
         let body_bytes = &response.bytes().await?;
         // test print whole body
-        match String::from_utf8(body_bytes.to_vec()) {
-            Ok(text) => println!("Response text: {}", text),
-            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
-        }
+        // match String::from_utf8(body_bytes.to_vec()) {
+        //     Ok(text) => println!("Response text: {}", text),
+        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        // }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @stop_tracking_response instance
@@ -467,10 +438,10 @@ impl tracking_client {
 
         let body_bytes = &response.bytes().await?;
         // test print whole body
-        match String::from_utf8(body_bytes.to_vec()) {
-            Ok(text) => println!("Response text: {}", text),
-            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
-        }
+        // match String::from_utf8(body_bytes.to_vec()) {
+        //     Ok(text) => println!("Response text: {}", text),
+        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        // }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @stop_tracking_response instance

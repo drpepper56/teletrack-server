@@ -110,117 +110,6 @@ struct tracking_number_user_relation {
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    UTILITY FUNCTIONS
-    TODO: function
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-*/
-
-/// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
-/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user
-/// INCASE the userID hash exists on the database anything to do with saving tracking history or sending addressed notifications should proceed with the raw userID
-async fn check_user_exists(
-    client: web::Data<Client>,
-    request: HttpRequest,
-) -> Result<String, HttpResponse> {
-    // open the head and try to get the relevant value that should be there
-    let user_id_hash = match request.headers().get("X-User-ID-Hash") {
-        Some(header) => match header.to_str() {
-            Ok(s) => {
-                println!("@CHECK_USER_EXISTS:{}", s);
-                s.to_string()
-            }
-            Err(_) => {
-                println!("invalid header");
-                return Err(HttpResponse::BadRequest().json(
-                    serde_json::json!({"request header error": "missing header X-USER-ID-HASH"}),
-                ));
-            }
-        },
-        None => {
-            println!("no hhead?");
-            return Err(
-                HttpResponse::BadRequest().json(serde_json::json!({"header error": "no head?"}))
-            );
-        }
-    };
-
-    // chose the right database and collection
-    // search for the user id hash and return the actual ID if found, send errors otherwise
-    println!("@CHECK_USER_EXISTS: verifying user now...");
-    let db = client.database("teletrack");
-    let collection: mongodb::Collection<user> = db.collection("users");
-    let filter = doc! {"user_id_hash": user_id_hash};
-    match collection.find_one(filter, None).await {
-        Ok(Some(user)) => {
-            println!("@CHECK_USER_EXISTS: user found: {:?}", user);
-            Ok(user.user_id_hash) // Return the user ID hash as hex string
-        }
-        Ok(None) => {
-            println!("@CHECK_USER_EXISTS: user not found");
-            Err(HttpResponse::build(
-                StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            )
-            .json(serde_json::json!({"expected error": "user doesn't exist yet"})))
-        }
-        Err(e) => {
-            eprintln!("@CHECK_USER_EXISTS: mongodb not goated: {}", e);
-            Err(HttpResponse::InternalServerError().body(format!("database error: {}", e)))
-        }
-    }
-}
-
-/// Create the user but before check again if the user already exists on the database, double check act as a guard in case this function is ever used in a context
-/// where it is not triggered by the predicted interaction
-async fn create_user(
-    client: web::Data<Client>,
-    user_details: user_details,
-) -> Result<bool, user_check_error> {
-    println!("@CREATE_USER: creating user now...");
-
-    let db = client.database("teletrack");
-    let collection: mongodb::Collection<user> = db.collection("users");
-
-    // create the user document
-    let user = user {
-        user_id: user_details.user_id.clone(),
-        user_id_hash: encode(Sha256::digest(user_details.user_id.as_bytes())),
-        user_name: user_details.user_name,
-    };
-
-    // check if the user exists already
-    let filter = doc! {"user_id_hash": &user.user_id_hash};
-    let duplicate_present = collection.find_one(filter, None).await;
-    match duplicate_present {
-        Ok(Some(_)) => {
-            println!("@CREATE_USER: user already exists");
-            return Err(user_check_error::UserAlreadyExists);
-        }
-        Err(e) => {
-            eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
-            return Err(user_check_error::DatabaseError(e));
-        }
-        Ok(None) => {
-            println!("@CREATE_USER: user doesn't exist yet");
-        }
-    }
-
-    // insert the user
-    let result = collection.insert_one(user, None).await;
-
-    match result {
-        Ok(_) => Ok(true),
-        Err(e) => Err(user_check_error::DatabaseError(e)),
-    }
-}
-
-/// Function to check if the user has a relation to the tracking number in the database
-
-/// Function to insert a relation record between a user and a tracking number
-
-/// Function to insert the tracking data in database format to the database
-
-/*
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     API CALLS
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -339,6 +228,249 @@ async fn notify_of_tracking_event_update(
 }
 
 // TODO: implement logic for notifying the right user of the update on their package
+// TODO: move to webhook
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    UTILITY FUNCTIONS
+    TODO: function
+    TODO: get the values for database and collection from one constant instead of writing them in each function
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+/// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
+/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user
+/// INCASE the userID hash exists on the database anything to do with saving tracking history or sending addressed notifications should proceed with the raw userID
+async fn check_user_exists(
+    client: web::Data<Client>,
+    request: HttpRequest,
+) -> Result<String, HttpResponse> {
+    // open the head and try to get the relevant value that should be there
+    let user_id_hash = match request.headers().get("X-User-ID-Hash") {
+        Some(header) => match header.to_str() {
+            Ok(s) => {
+                // println!("@CHECK_USER_EXISTS: {}", s);
+                s.to_string()
+            }
+            Err(_) => {
+                println!("invalid header");
+                return Err(HttpResponse::BadRequest().json(
+                    serde_json::json!({"request header error": "missing header X-USER-ID-HASH"}),
+                ));
+            }
+        },
+        None => {
+            println!("no hhead?");
+            return Err(
+                HttpResponse::BadRequest().json(serde_json::json!({"header error": "no head?"}))
+            );
+        }
+    };
+
+    // chose the right database and collection
+    // search for the user id hash and return the actual ID if found, send errors otherwise
+    // println!("@CHECK_USER_EXISTS: verifying user now...");
+    let db = client.database("teletrack");
+    let collection: mongodb::Collection<user> = db.collection("users");
+    let filter = doc! {"user_id_hash": user_id_hash};
+    match collection.find_one(filter, None).await {
+        Ok(Some(user)) => {
+            println!("@CHECK_USER_EXISTS: user found: {:?}", user);
+            Ok(user.user_id_hash) // Return the user ID hash as hex string
+        }
+        Ok(None) => {
+            println!("@CHECK_USER_EXISTS: user not found");
+            Err(HttpResponse::build(
+                StatusCode::from_u16(520).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .json(serde_json::json!({"expected error": "user doesn't exist yet"})))
+        }
+        Err(e) => {
+            eprintln!("@CHECK_USER_EXISTS: mongodb not goated: {}", e);
+            Err(HttpResponse::InternalServerError().body(format!("database error: {}", e)))
+        }
+    }
+}
+
+/// Create the user but before check again if the user already exists on the database, double check act as a guard in case this function is ever used in a context
+/// where it is not triggered by the predicted interaction
+async fn create_user(
+    client: web::Data<Client>,
+    user_details: user_details,
+) -> Result<bool, user_check_error> {
+    println!("@CREATE_USER: creating user now...");
+
+    let db = client.database("teletrack");
+    let collection: mongodb::Collection<user> = db.collection("users");
+
+    // create the user document
+    let user = user {
+        user_id: user_details.user_id.clone(),
+        user_id_hash: encode(Sha256::digest(user_details.user_id.as_bytes())),
+        user_name: user_details.user_name,
+    };
+
+    // check if the user exists already
+    let filter = doc! {"user_id_hash": &user.user_id_hash};
+    let duplicate_present = collection.find_one(filter, None).await;
+    match duplicate_present {
+        Ok(Some(_)) => {
+            println!("@CREATE_USER: user already exists");
+            return Err(user_check_error::UserAlreadyExists);
+        }
+        Err(e) => {
+            eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
+            return Err(user_check_error::DatabaseError(e));
+        }
+        Ok(None) => {
+            println!("@CREATE_USER: user doesn't exist yet");
+        }
+    }
+
+    // insert the user
+    let result = collection.insert_one(user, None).await;
+
+    match result {
+        Ok(_) => Ok(true),
+        Err(e) => Err(user_check_error::DatabaseError(e)),
+    }
+}
+
+/// Function to check if the user has a relation to the tracking number in the database
+async fn check_relation(client: web::Data<Client>, tracking_number: &str, user_id_hash: &str) {
+    // set database
+    let db = client.database("teletrack");
+    // set collection
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    // set search filter
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+    // find the relation record in the database
+    let permission_check = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(relation_record)) = permission_check {
+        println!(
+            "@PERMISSION_GRANTED: relation record found, subscribed: {}",
+            relation_record.is_subscribed
+        );
+    } else if let Ok(None) = permission_check {
+        println!("@NO_PERMISSION: relation record not found");
+        HttpResponse::InternalServerError()
+            .body("user doesn't have access to that tracking number.");
+    } else if let Err(e) = permission_check {
+        println!("database error {}", e);
+        HttpResponse::InternalServerError().body(e.to_string());
+    } else {
+        HttpResponse::InternalServerError().body("error when checking permissions");
+    }
+    //
+}
+
+/// Function to insert a relation record between a user and a tracking number
+async fn insert_relation(client: web::Data<Client>, tracking_number: String, user_id_hash: String) {
+    // create the relation record and put it in the database
+    let tracking_user_relation: tracking_number_user_relation = tracking_number_user_relation {
+        tracking_number: tracking_number,
+        carrier: None,
+        user_id_hash: user_id_hash,
+        is_subscribed: true,
+    };
+    // set database
+    let db = client.database("teletrack");
+    // set collection
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    // insert the relation
+    let _ = match collection_relations
+        .insert_one(tracking_user_relation, None)
+        .await
+    {
+        Ok(_) => {
+            println!("@CREATING_RELATION_RECORD: relation record inserted");
+            Ok(())
+        }
+        Err(e) => {
+            println!(
+                "@CREATING_RELATION_RECORD: error inserting relation record: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    };
+    //
+}
+
+/// Function to insert the tracking data in database format to the database
+async fn refresh_and_return_tracking_data(
+    client: web::Data<Client>,
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<tracking_data_database_form, HttpResponse> {
+    // pull the tracking information from the API
+    let gettrackinfo_result = match pull_tracking_info(data.clone(), tracking_number.clone()).await
+    {
+        Ok(tracking_data) => {
+            println!("tracking data received");
+            Ok(tracking_data)
+        }
+        Err(tracking_error::InfoNotReady) => {
+            println!("@REFRESH_TRACKING_DATA: info not ready, abort");
+            return Err(HttpResponse::InternalServerError().body("info not ready"));
+        }
+        Err(e) => {
+            println!(
+                "@REFRESH_TRACKING_DATA: error getting the tracking data: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    };
+    //
+
+    // convert the tracking_data_get_info to tracking_data_database_form
+    let tracking_data_database_form = gettrackinfo_result.unwrap().convert_to_TrackingData_DBF();
+    // set database
+    let db = client.database("teletrack");
+    // set collection
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    let filter = doc! {"data.number": &tracking_number};
+
+    // delete any previous info with that tracking number
+    let _ = match collection_tracking_data.delete_many(filter, None).await {
+        Ok(delete_result) => {
+            println!("deleted {} tracking data docs", delete_result.deleted_count);
+            Ok(())
+        }
+        Err(e) => {
+            println!(
+                "@REFRESH_TRACKING_DATA: non fatal error deleting old tracking data: {}",
+                e
+            );
+            Err(e)
+        }
+    };
+    //
+
+    // insert the fresh tracking info into the database
+    let insert_tracking_data_result = match collection_tracking_data
+        .insert_one(tracking_data_database_form.clone(), None)
+        .await
+    {
+        Ok(_) => {
+            // returning the fresh tracking info to the user
+            println!("tracking data inserted");
+            Ok(tracking_data_database_form)
+        }
+        Err(e) => {
+            println!(
+                "@REGISTER_TRACKING_NUMBER: error inserting tracking data: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    };
+    insert_tracking_data_result
+}
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -501,90 +633,29 @@ async fn register_tracking_number(
     //
 
     // create the relation record and put it in the database
-    let tracking_user_relation: tracking_number_user_relation = tracking_number_user_relation {
-        tracking_number: tracking_details.number.clone(),
-        carrier: None,
-        user_id_hash: user_id_hash.clone(),
-        is_subscribed: true,
-    };
-    let _ = match collection_relations
-        .insert_one(tracking_user_relation, None)
-        .await
+    insert_relation(
+        client.clone(),
+        tracking_details.number.clone(),
+        user_id_hash,
+    )
+    .await;
+    //
+
+    // pull the tracking info about the number, if any old info is in the database - replace it
+    // set the new tracking info in the database and return it here to be processed and put in a response
+    match refresh_and_return_tracking_data(
+        client.clone(),
+        data.clone(),
+        tracking_details.number.clone(),
+    )
+    .await
     {
-        // continue
-        Ok(_) => {
-            println!("relation record inserted");
-            Ok(())
-        }
-        Err(e) => {
-            println!(
-                "@REGISTER_TRACKING_NUMBER: error inserting relation record: {}",
-                e
-            );
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
-        }
-    };
+        Ok(result) => HttpResponse::Ok().json(result),
+        Err(http_response) => http_response,
+    }
     //
 
-    // pull the tracking information from the API
-    let gettrackinfo_result =
-        match pull_tracking_info(data.clone(), tracking_details.clone().number).await {
-            Ok(tracking_data) => {
-                println!("tracking data received");
-                Ok(tracking_data)
-            }
-            Err(e) => {
-                println!(
-                    "@REGISTER_TRACKING_NUMBER: error getting the tracking data: {}",
-                    e
-                );
-                Err(HttpResponse::InternalServerError().body(e.to_string()))
-            }
-        };
-    //
-
-    // convert the tracking_data_get_info to tracking_data_database_form and delete any previous info with that tracking number
-    let tracking_data_database_form = gettrackinfo_result.unwrap().convert_to_TrackingData_DBF();
-    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
-        db.collection("tracking_data");
-    let filter = doc! {"data.number": &tracking_details.number};
-    let _ = match collection_tracking_data.delete_many(filter, None).await {
-        // continue
-        Ok(delete_result) => {
-            println!("deleted {} tracking data", delete_result.deleted_count);
-            Ok(())
-        }
-        Err(e) => {
-            println!(
-                "@REGISTER_TRACKING_NUMBER: error deleting tracking data: {}",
-                e
-            );
-            Err(e)
-        }
-    };
-    //
-
-    // insert the fresh tracking info into the database
-    let insert_tracking_data = match collection_tracking_data
-        .insert_one(tracking_data_database_form.clone(), None)
-        .await
-    {
-        // continue
-        Ok(_) => {
-            println!("tracking data inserted");
-            // return relevant tracking information to the user
-            // TODO: figure out what is relevant
-            HttpResponse::Ok().json(tracking_data_database_form.data.track_info.clone())
-        }
-        Err(e) => {
-            println!(
-                "@REGISTER_TRACKING_NUMBER: error inserting tracking data: {}",
-                e
-            );
-            HttpResponse::InternalServerError().body(e.to_string())
-        }
-    };
-    insert_tracking_data
+    // TODO: figure out what is relevant
 }
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that
@@ -645,16 +716,16 @@ async fn stop_tracking_number(
     if update_result.unwrap().modified_count.clone() > 0 {
         println!("successfully unsubscribed from a number by the user");
         // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
-        let _ = match stop_tracking_single(data.clone(), tracking_number.clone()).await {
-            Ok(_) => {
-                println!("number has been stopped on the API");
-                Ok(())
-            }
-            Err(e) => {
-                println!("@STOP_TRACKING_NUMBER: error stopping_number: {},", e);
-                Err(e)
-            }
-        };
+        // let _ = match stop_tracking_single(data.clone(), tracking_number.clone()).await {
+        //     Ok(_) => {
+        //         println!("number has been stopped on the API");
+        //         Ok(())
+        //     }
+        //     Err(e) => {
+        //         println!("@STOP_TRACKING_NUMBER: error stopping_number: {},", e);
+        //         Err(e)
+        //     }
+        // };
         //
 
         HttpResponse::Ok()
@@ -683,27 +754,10 @@ async fn retrack_stopped_number(
     };
     //
 
-    // check if they have the number linked to them in a record
-    let db = client.database("teletrack");
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
-        db.collection("tracking_number_user_relation");
     let tracking_number = tracking_data.into_inner().number.clone();
-    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
-    let permission_check = collection_relations.find_one(filter.clone(), None).await;
-    if let Ok(Some(relation_record)) = permission_check {
-        println!(
-            "relation record found, subscribed: {}",
-            relation_record.is_subscribed
-        );
-    } else if let Ok(None) = permission_check {
-        println!("relation record not found, no permission");
-        return HttpResponse::InternalServerError()
-            .body("user doesn't have access to that tracking number.");
-    } else if let Err(e) = permission_check {
-        println!("database error {}", e);
-        return HttpResponse::InternalServerError().body(e.to_string());
-    }
-    //
+
+    // check if the user has permission for that number
+    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
 
     // get the data about this number from the API
     let number_status =
@@ -733,6 +787,10 @@ async fn retrack_stopped_number(
 
     // send request to the DB to change the is_subscribed value to true
     let database_update = doc! {"$set":{"is_subscribed": true}};
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     let update_result = match collection_relations
         .update_one(filter, database_update, None)
         .await
@@ -775,7 +833,6 @@ async fn retrack_stopped_number(
 
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
 /// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
-// TODO: implement
 async fn delete_tracking_number(
     client: web::Data<Client>,
     data: web::Data<app_state>,
@@ -839,18 +896,18 @@ async fn delete_tracking_number(
 
         // check the response from the database and delete the number from the API register if there are none
         if other_relations_count.unwrap() == 0 {
-            println!("would delete but it's your only number registered for testing")
+            // println!("would delete but it's your only number registered for testing")
             //TODO: put this back in later
-            // let _ = match delete_number_single(data.clone(), tracking_number).await {
-            //     Ok(_) => {
-            //         println!("number has been deleted on the API");
-            //         Ok(())
-            //     }
-            //     Err(e) => {
-            //         println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
-            //         Err(e)
-            //     }
-            // };
+            let _ = match delete_number_single(data.clone(), tracking_number).await {
+                Ok(_) => {
+                    println!("number has been deleted on the API");
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
+                    Err(e)
+                }
+            };
         }
         //
 
@@ -861,6 +918,7 @@ async fn delete_tracking_number(
         HttpResponse::InternalServerError().body("didn't delete")
     }
 }
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -952,6 +1010,7 @@ async fn delete_tracking_number_options() -> impl Responder {
         ))
         .finish()
 }
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     MAiN
