@@ -67,20 +67,19 @@ async fn notify_of_tracking_event_update(
 pub async fn handle_webhook(
     data: web::Data<crate::app_state>,
     request: HttpRequest,
-    payload: web::Json<serde_json::Value>,
+    payload: web::Json<tracking_data_webhook_update>,
 ) -> impl Responder {
-    println!(
-        "human written console message: webhook received, my secret key is {}",
-        data.webhook_secret
-    );
+    // hello
+    println!("human written console message: webhook received, my secret key is 123fuckyou456");
 
+    // print all headers
     println!("Received headers:");
     for (name, value) in request.headers().iter() {
         println!("  {}: {:?}", name, value);
     }
 
     // print the whole boomboclat thing
-    println!("Full Webhook Payload: {:?}", payload);
+    println!("webhook received payload: {:?}", payload);
 
     // Here you would:
     // 1. Verify the webhook signature (if using) - skipped for now
@@ -93,20 +92,3 @@ pub async fn handle_webhook(
     //     "processed_at": chrono::Utc::now().timestamp()
     // }))
 }
-
-// #[post("/webhook/17track/verify")]
-// pub async fn verify_webhook(
-//     data: web::Data<AppState>,
-//     challenge: web::Json<WebhookVerification>,
-// ) -> impl Responder {
-//     info!("Received webhook verification challenge");
-//     HttpResponse::Ok().json(serde_json::json!({
-//         "challenge": challenge.challenge
-//     }))
-// }
-
-// // Webhook verification structure
-// #[derive(Debug, Serialize, Deserialize)]
-// struct WebhookVerification {
-//     challenge: String,
-// }

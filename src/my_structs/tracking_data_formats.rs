@@ -40,7 +40,7 @@ pub mod tracking_data_base {
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct status {
         pub status: String,
-        pub sub_status: String,
+        pub sub_status: Option<String>,
         pub sub_status_descr: Option<String>,
     }
 
@@ -52,7 +52,7 @@ pub mod tracking_data_base {
         pub description: String,
         pub location: String,
         pub stage: Option<String>,
-        pub sub_status: String,
+        pub sub_status: Option<String>,
         pub address: address,
     }
 
@@ -92,8 +92,8 @@ pub mod tracking_data_base {
         pub risk_factor: i32,
         pub service_type: Option<String>,
         pub weight_raw: Option<String>,
-        pub weight_kg: Option<f64>,
-        pub pieces: Option<i32>,
+        pub weight_kg: Option<String>,
+        pub pieces: Option<String>,
         pub dimensions: Option<String>,
         pub customer_number: Option<String>,
         pub reference_number: Option<String>,
@@ -121,12 +121,11 @@ pub mod tracking_data_base {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct carrier_info {
-        pub key: i32,
-        pub name: String,
-        pub alias: String,
-        pub tel: String,
-        pub homepage: String,
-        pub country: String,
+        pub key: Option<i32>,
+        pub name: Option<String>,
+        pub alias: Option<String>,
+        pub tel: Option<String>,
+        pub homepage: Option<String>,
     }
 }
 

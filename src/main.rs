@@ -1076,8 +1076,10 @@ async fn main() -> std::io::Result<()> {
             // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
             .service(webhook::handle_webhook)
             // HTTPS receive
+            // testing
             .route("/write", web::post().to(write_to_db_test))
             .route("/test_read", web::get().to(test_read))
+            // prod
             .route("/create_user", web::post().to(create_user_handler))
             .route(
                 "/register_tracking_number",
