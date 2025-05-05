@@ -37,8 +37,10 @@ pub enum tracking_error {
     #[error("number can't be re-tracked since it's being actively tracked")]
     ReTrackRejectedAlreadyTracked,
     #[error("the number you are trying to stop tracking is already stopped or it doesn't exist")]
+    ReTrackRejectedAlreadyRetrackedBefore,
+    #[error("the number you are trying to stop tracking is already stopped or it doesn't exist")]
     RetrackError,
-    #[error("error trying to retarck number, maybe not registered")]
+    #[error("error trying to stop tracking a number")]
     TrackingStopError,
     #[error("the number you are trying to delete is not registered")]
     NumberNotFound,
@@ -219,10 +221,48 @@ impl tracking_client {
                         // TODO: deal with code -18019909[delivered ages ago] // see if handled
                         -18019909 => {
                             println!(
-                                "get track info error: THE NUMBER YOU ARE QUERYING MAY NOT BE READY IN THE API YET {:?}",
+                                "get track info error: THE NUMBER YOU ARE QUERYING MAY NOT BE READY IN THE API YET, OR IT'S BEEN STOPPED BY A REQUEST {:?}",
                                 response_data.data.rejected[0]
                             );
-                            return Err(tracking_error::NumberMaybeNotReady);
+                            println!("retrying with retrack now...");
+                            // try to set the number to tracked
+                            let retrack_result = self.retrack_stopped_number(tracking_number).await;
+                            match retrack_result {
+                                Ok(result) => {
+                                    match result.code {
+                                        0 => {
+                                            if Some(response_data.data.rejected.len()) == Some(1) {
+                                                match response_data.data.rejected[0].error.code {
+                                                    -18019904 => {
+                                                        println!(
+                                                            "retrack failed: number is not stopped, NOT READY ON THE API"
+                                                        );
+                                                        Err(tracking_error::RetrackError)
+                                                    }
+                                                    -18019905 => {
+                                                        println!(
+                                                            "retrack failed: re-tracked once before and not allowed to do it again"
+                                                        );
+                                                        Err(tracking_error::RetrackError)
+                                                    }
+                                                    _ => Err(tracking_error::RetrackError),
+                                                }
+                                            } else {
+                                                println!("number has been re-tracked on the API");
+                                                // request for the track info again, recursive
+                                                Box::pin(self.gettrackinfo_pull(tracking_number))
+                                                    .await
+                                                    .map_err(|_| tracking_error::GetTrackInfoError)
+                                            }
+                                        }
+                                        _ => {
+                                            println!("retrack after get_info_pull failed, possibly second sequence and number is not ready on the API yet, retry later");
+                                            Err(tracking_error::RetrackError)
+                                        }
+                                    }
+                                }
+                                Err(e) => Err(tracking_error::RetrackError),
+                            }
                         }
                         _ => {
                             println!("get track info error: {:?}", response_data.data.rejected[0]);
@@ -272,10 +312,10 @@ impl tracking_client {
 
         let body_bytes = &response.bytes().await?;
         // test print whole body
-        match String::from_utf8(body_bytes.to_vec()) {
-            Ok(text) => println!("Response text: {}", text),
-            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
-        }
+        // match String::from_utf8(body_bytes.to_vec()) {
+        //     Ok(text) => println!("Response text: {}", text),
+        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        // }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @stop_tracking_response instance
@@ -294,6 +334,10 @@ impl tracking_client {
                 } else if Some(response_data.data.rejected.len()) == Some(1) {
                     match response_data.data.rejected[0].error.code {
                         // see what errors happen here and add something to handle specifically if necessary
+                        -18019906 => {
+                            println!("tracking stop rejected: number is not being tracked so it can't be untracked");
+                            return Err(tracking_error::TrackingStopError);
+                        }
                         _ => {
                             println!(
                                 "tracking stop rejected: {:?}",
@@ -359,20 +403,22 @@ impl tracking_client {
                 // Even though it's an array treat it always like only one tracking number has been passed,
                 // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
                 if Some(response_data.data.accepted.len()) == Some(1) {
-                    println!("retrack success: {:?}", response_data.data.accepted[0]);
+                    println!("re-tracking success: {:?}", response_data.data.accepted[0]);
                     Ok(response_data)
                 } else if Some(response_data.data.rejected.len()) == Some(1) {
                     match response_data.data.rejected[0].error.code {
                         -18019904 => {
-                            println!(
-                                "retrack error: only allowed to retrack stopped numbers {:?}",
-                                response_data.data.rejected[0]
-                            );
+                            println!("re-tracking error: only allowed to retrack stopped numbers");
                             return Err(tracking_error::ReTrackRejectedAlreadyTracked);
+                        }
+                        -18019905 => {
+                            println!("re-tracking error: number was re-tracked before, not allowed to repeat that");
+                            return Err(tracking_error::ReTrackRejectedAlreadyRetrackedBefore);
+                            // TODO: re-add the number :)
                         }
                         _ => {
                             println!(
-                                "retrack stop rejected: {:?}",
+                                "stop tracking rejected unknown reason: {:?}",
                                 response_data.data.rejected[0]
                             );
                             return Err(tracking_error::RetrackError);
@@ -500,10 +546,10 @@ impl tracking_client {
 
         let body_bytes = &response.bytes().await?;
         // test print whole body
-        match String::from_utf8(body_bytes.to_vec()) {
-            Ok(text) => println!("Response text: {}", text),
-            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
-        }
+        // match String::from_utf8(body_bytes.to_vec()) {
+        //     Ok(text) => println!("Response text: {}", text),
+        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        // }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @number_status_check instance
@@ -514,10 +560,10 @@ impl tracking_client {
                 // Even though it's an array treat it always like only one tracking number has been passed,
                 // the array is just an API thing, it takes up to 40 numbers at once but here only one is always passed (in parameters)
                 if Some(response_data.data.accepted.len()) == Some(1) {
-                    println!(
-                        "data about your number found: {:?}",
-                        response_data.data.accepted[0]
-                    );
+                    // println!(
+                    //     "data about your number found: {:?}",
+                    //     response_data.data.accepted[0]
+                    // );
                     Ok(response_data)
                 } else {
                     println!("{:?}", response_data);

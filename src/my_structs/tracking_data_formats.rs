@@ -566,7 +566,7 @@ pub mod tracking_number_meta_data {
         pub recipient_country: Option<String>,
         pub register_time: Option<String>,
         pub tracking_status: String,
-        pub package_status: Option<String>,
+        pub package_status: String,
         pub track_time: Option<String>,
         pub push_time: Option<String>,
         pub push_status: Option<String>,

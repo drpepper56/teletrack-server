@@ -468,7 +468,7 @@ async fn register_tracking_number(
         // tracking number was already registered, continue
         Err(tracking_error::TrackingAlreadyRegistered) => {
             println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
-            Ok(())
+            Ok(()) // it's okay if it's not registered+stopped on the API
         }
         // tracking number not found by the API
         Err(tracking_error::TrackingNumberNotFoundByAPI) => {
@@ -493,10 +493,7 @@ async fn register_tracking_number(
     let duplicate_relation_search = collection_relations.find_one(filter.clone(), None).await;
     if let Ok(Some(_)) = duplicate_relation_search {
         println!("relation already exists");
-        return HttpResponse::InternalServerError().body(
-            serde_json::json!({"error":"tracking number already registered for this user"})
-                .to_string(),
-        );
+        return HttpResponse::Ok().body("OK");
     } else if let Err(e) = duplicate_relation_search {
         println!("database error: {}", e);
         return HttpResponse::InternalServerError().body(e.to_string());
@@ -669,7 +666,7 @@ async fn stop_tracking_number(
     }
 }
 
-/// Function for retracking a stopped tracking number, will be triggered when a users switches the tracking ON for the number on the client, there
+/// Function for re-tracking a stopped tracking number, will be triggered when a users switches the tracking ON for the number on the client, there
 /// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
 async fn retrack_stopped_number(
     client: web::Data<Client>,
@@ -708,6 +705,32 @@ async fn retrack_stopped_number(
     }
     //
 
+    // get the data about this number from the API
+    let number_status =
+        match check_number_status_single(data.clone(), tracking_number.clone()).await {
+            Ok(number_status) => Ok(number_status),
+            Err(e) => {
+                println!(
+                    "@RETRACK_STOPPED_NUMBER: error getting the number status data: {}",
+                    e
+                );
+                Err(e)
+            }
+        };
+    //
+
+    // get the important tracking and status information to check
+    let tracking_status = &number_status.as_ref().unwrap().data.accepted[0].tracking_status;
+    let package_status = &number_status.as_ref().unwrap().data.accepted[0].package_status;
+
+    // if the package has been delivered do not update the subscribe value in the database
+    if package_status == "Delivered" {
+        println!("the package has been marked delivered and there won't be ant new updates");
+        return HttpResponse::Ok()
+            .body("number cannot be subscribed to because the package has been marked as delivered and there won't be new updates");
+    }
+    //
+
     // send request to the DB to change the is_subscribed value to true
     let database_update = doc! {"$set":{"is_subscribed": true}};
     let update_result = match collection_relations
@@ -723,46 +746,31 @@ async fn retrack_stopped_number(
     };
     //
 
-    // resolve the response from the database, it's a bit weird here
-    if update_result.unwrap().modified_count.clone() > 0 {
-        println!("successfully subscribed to a number by the user");
-
-        // check if the number is actually active on the API
-        let number_status =
-            match check_number_status_single(data.clone(), tracking_number.clone()).await {
-                Ok(number_status) => Ok(number_status),
-                Err(e) => {
-                    println!(
-                        "@RETRACK_STOPPED_NUMBER: error getting the number status data: {}",
-                        e
-                    );
-                    Err(e)
-                }
-            };
-        //
-
-        // activate it if it's stopped
-        if number_status.unwrap().data.accepted[0].tracking_status == "Stopped".to_string() {
-            let _ = match retrack_stopped_number_single(data.clone(), tracking_number).await {
-                Ok(_) => {
-                    println!("number has been re-tracked on the API");
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("@RETRACK_STOPPED_NUMBER: error re-tracking_number: {},", e);
-                    Err(e)
-                }
-            };
-        }
-        //
-
-        HttpResponse::Ok()
-            .body("action successful, user will be notified of updates to this tracking number ")
-    } else {
-        // not found (impossible)
+    // resolve the response from the database, return response if user was already subscribed
+    if update_result.unwrap().modified_count.clone() == 0 {
         println!("found but not changed, was already set to true");
-        HttpResponse::InternalServerError().body("already subscribed to that number")
+        return HttpResponse::InternalServerError().body("already subscribed to that number");
     }
+    println!("successfully subscribed to a number by the user");
+    //
+
+    // activate it if it's stopped and not yet delivered
+    if tracking_status == "Stopped" && package_status != "Delivered" {
+        let _ = match retrack_stopped_number_single(data.clone(), tracking_number).await {
+            Ok(_) => {
+                println!("number has been re-tracked on the API");
+                Ok(())
+            }
+            Err(e) => {
+                println!("@RETRACK_STOPPED_NUMBER: error re-tracking_number: {},", e);
+                Err(HttpResponse::InternalServerError().body("the number you are trying to retrack has been retracked before and cant be retracked again."))
+            }
+        };
+    }
+    //
+
+    HttpResponse::Ok()
+        .body("action successful, user will be notified of updates to this tracking number ")
 }
 
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
@@ -1042,8 +1050,8 @@ async fn main() -> std::io::Result<()> {
             .service(retrack_stopped_number_options)
             .service(delete_tracking_number_options)
     })
-    // .bind(("127.0.0.1", 8080))?
-    .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
+    .bind(("127.0.0.1", 8080))?
+    // .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
     .run()
     .await
 }
