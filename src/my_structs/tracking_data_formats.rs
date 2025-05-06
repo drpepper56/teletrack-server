@@ -377,7 +377,6 @@ pub mod tracking_data_get_info {
         pub fn convert_to_TrackingData_DBF(&self) -> TrackingData_DBF {
             let accepted_package = self.data.accepted.first().expect("bad format of GETTRACKINFO method, error happened in converting it to the database format");
             TrackingData_DBF {
-                code: self.code.clone(),
                 data: PackageData {
                     number: accepted_package.number.clone(),
                     carrier: accepted_package.carrier.clone(),
@@ -423,24 +422,47 @@ pub mod tracking_data_get_info {
     https://api.17track.net/en/doc?version=v2.2&anchor=notification-status--content
 */
 pub mod tracking_data_webhook_update {
-    use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
+    use crate::{
+        my_structs::tracking_data_formats::tracking_data_base::track_info,
+        my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
+    };
     use serde::{Deserialize, Serialize};
-    use std::fmt;
-    #[derive(Debug, Serialize, Deserialize)]
+
+    use super::tracking_data_database_form::PackageData;
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct TrackingResponse {
         pub event: String,
         pub data: TrackingData,
     }
 
+    impl TrackingResponse {
+        pub fn convert_to_TrackingData_DBF(&self) -> Option<TrackingData_DBF> {
+            if let TrackingData::PackageData(accepted_package) = &self.data {
+                Some(TrackingData_DBF {
+                    data: PackageData {
+                        number: accepted_package.number.clone(),
+                        carrier: accepted_package.carrier.clone(),
+                        param: accepted_package.param.clone(),
+                        tag: accepted_package.tag.clone(),
+                        track_info: accepted_package.track_info.clone(),
+                    },
+                })
+            } else {
+                None
+            }
+        }
+    }
+
     /// either one of the events try to deserialize
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     #[serde(untagged)]
     pub enum TrackingData {
-        PackageData(PackageData),
+        PackageData(PackageDataWebhook),
         TrackingStopped(TrackingStopped),
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct TrackingStopped {
         number: String,
         carrier: i32,
@@ -448,8 +470,8 @@ pub mod tracking_data_webhook_update {
         tag: Option<String>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct PackageData {
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct PackageDataWebhook {
         pub number: String,
         pub carrier: i32,
         pub param: Option<()>,
@@ -465,7 +487,6 @@ pub mod tracking_data_database_form {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct TrackingData_DBF {
-        pub code: i32,
         pub data: PackageData,
     }
 

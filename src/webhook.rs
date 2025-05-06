@@ -1,10 +1,16 @@
 use crate::{
     app_state,
-    my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as tracking_data_webhook_update,
+    my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
+    my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as webhook_update,
 };
 use actix_web::{body, post, web, FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
 use chrono::Utc;
 use hex::encode;
+use mongodb::{
+    bson::{de, doc},
+    options::{ClientOptions, FindOneAndUpdateOptions, FindOptions},
+    Client,
+};
 use sha2::{Digest, Sha256};
 
 /*
@@ -23,6 +29,8 @@ pub enum webhook_error {
     SignFailedNoMatch,
     #[error("failed to get the raw body of request")]
     FailedToGetRawBody,
+    #[error("error converting webhook update to db format")]
+    ErrorConvertingWebhookUpdate,
 }
 
 /*
@@ -62,7 +70,6 @@ async fn notify_of_tracking_event_update(
 }
 
 // TODO: implement logic for notifying the right user of the update on their package
-// TODO: move to webhook
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -88,29 +95,30 @@ async fn verify_origin_body(
     data: web::Data<crate::app_state>,
     request: HttpRequest,
     body: web::Bytes,
-) -> Result<tracking_data_webhook_update, HttpResponse> {
+) -> Result<webhook_update, HttpResponse> {
     // check if the the header contains a sign value
-    let digest_from_api = match request.clone().headers().get("sign") {
+    let digest_from_api = match request.headers().get("sign") {
         Some(header) => match header.to_str() {
-            Ok(s) => Ok(s.to_string()),
+            Ok(s) => Ok::<String, actix_web::Error>(s.to_string()),
             Err(_) => {
                 println!("sign header bad format");
-                Err(HttpResponse::BadRequest().finish())
+                return Err(HttpResponse::BadRequest().finish());
             }
         },
         None => {
             println!("sign header missing");
-            Err(HttpResponse::BadRequest().finish())
+            return Err(HttpResponse::BadRequest().finish());
         }
-    };
+    }
+    .unwrap();
     //
 
     // get the request body as a string, not using payload, it's parsed as a expected format and it's semantically incompatible because of diffs in nulls
     let body_string = match get_raw_body_as_string(body).await {
-        Ok(s) => Ok(s),
+        Ok(s) => Ok::<String, actix_web::Error>(s),
         Err(e) => {
             println!("problem with getting the raw request body string: {}", e);
-            Err(HttpResponse::BadRequest().finish())
+            return Err(HttpResponse::BadRequest().finish());
         }
     }
     .unwrap();
@@ -121,7 +129,7 @@ async fn verify_origin_body(
     // get a sha256 digest of the string
     let hash = Sha256::digest(&digest_raw);
     // compare it to the sign value from the header
-    if digest_from_api.unwrap() != encode(&hash) {
+    if digest_from_api != encode(&hash) {
         println!("{}", webhook_error::SignFailedNoMatch);
         return Err(HttpResponse::BadRequest().finish());
     }
@@ -134,15 +142,70 @@ async fn verify_origin_body(
     // }
 
     // extract the webhook_update struct from the body bytes
-    match serde_json::from_str::<tracking_data_webhook_update>(&body_string) {
+    match serde_json::from_str::<webhook_update>(&body_string) {
         Ok(payload) => Ok(payload),
         Err(e) => {
             println!("error parsing the body to the webhook_update struct: {}", e);
-            Err(HttpResponse::InternalServerError().finish())
+            return Err(HttpResponse::InternalServerError().finish());
         }
     }
 }
 
+/// Function used by webhook, takes the webhook update format of tracking update, converts to database form and refreshed the entry in the database
+async fn refresh_tracking_info_from_webhook_update(
+    client: web::Data<Client>,
+    tracking_info_update: webhook_update,
+) -> Result<(), HttpResponse> {
+    // convert the webhook_update to tracking_data_database_form
+    let tracking_data_database_form = match tracking_info_update.convert_to_TrackingData_DBF() {
+        Some(data) => Ok(data),
+        None => Err(webhook_error::ErrorConvertingWebhookUpdate),
+    }
+    .unwrap();
+    //
+
+    // set database
+    let db = client.database("teletrack");
+    // set collection
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    // set filter to search for old data
+    let filter = doc! {"data.number": &tracking_data_database_form.data.number};
+    // delete any previous info with that tracking number
+    match collection_tracking_data.delete_many(filter, None).await {
+        Ok(delete_result) => {
+            println!("deleted {} tracking data docs", delete_result.deleted_count);
+            Ok(())
+        }
+        Err(e) => {
+            println!(
+                "@REFRESH_TRACKING_DATA: non fatal error deleting old tracking data: {}",
+                e
+            );
+            Err(e)
+        }
+    };
+    //
+
+    // insert the fresh tracking info into the database
+    match collection_tracking_data
+        .insert_one(tracking_data_database_form.clone(), None)
+        .await
+    {
+        Ok(_) => {
+            // returning the fresh tracking info to the user
+            println!("tracking data inserted");
+            Ok(())
+        }
+        Err(e) => {
+            println!(
+                "@WEBHOOK_UPDATE_DATABASE: error inserting tracking data: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+}
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     WEBHOOK
@@ -153,6 +216,7 @@ async fn verify_origin_body(
 #[post("/webhook_17track")]
 pub async fn handle_webhook(
     data: web::Data<crate::app_state>,
+    client: web::Data<Client>,
     request: HttpRequest,
     body: web::Bytes,
 ) -> impl Responder {
@@ -166,7 +230,17 @@ pub async fn handle_webhook(
     // println!("  {:?}", payload);
     println!("  {:?}", payload.event);
 
-    // save in database in format
+    // split to two paths based on event, only test UPDATE rn
+
+    // save the update in database in format
+    match refresh_tracking_info_from_webhook_update(client.clone(), payload.clone()).await {
+        Ok(_) => {}
+        Err(response) => {
+            println!("unknown error trying to refresh database tracking info from update");
+            return response;
+        }
+    };
+    //
 
     // get list of users to notify of the update
 

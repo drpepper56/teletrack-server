@@ -193,45 +193,6 @@ async fn check_number_status_single(
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    NOTIFICATION FUNCTIONS
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-*/
-
-/// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
-/// telegram environment and pass the data to be resolved in the mini app
-async fn notify_of_tracking_event_update(
-    data: web::Data<app_state>,
-    // to what user //TODO: verify to which user using database
-    user_id: web::Path<i64>,
-) -> impl Responder {
-    // access the service and deal with validation checks from the errors
-    match &*data.notification_service {
-        Ok(service) => {
-            match service
-                .send_ma_notification(
-                    *user_id,
-                    "Update on your order tracking.",
-                    Some(vec![
-                        ("balls", "new new params"),
-                        ("balls2", "properly handled"),
-                    ]),
-                )
-                .await
-            {
-                Ok(_) => HttpResponse::Ok().json("Notification sent successfully"),
-                Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
-            }
-        }
-        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
-    }
-}
-
-// TODO: implement logic for notifying the right user of the update on their package
-// TODO: move to webhook
-
-/*
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     UTILITY FUNCTIONS
     TODO: function
     TODO: get the values for database and collection from one constant instead of writing them in each function
@@ -1096,11 +1057,6 @@ async fn main() -> std::io::Result<()> {
             .route(
                 "/delete_tracking_number",
                 web::post().to(delete_tracking_number),
-            )
-            // HTTPS trigger notification TESTING //TODO: route to be removed and function called by api update event
-            .route(
-                "/notify/{user_id}",
-                web::post().to(notify_of_tracking_event_update),
             )
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
