@@ -425,10 +425,20 @@ pub mod tracking_data_get_info {
 pub mod tracking_data_webhook_update {
     use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
     use serde::{Deserialize, Serialize};
+    use std::fmt;
     #[derive(Debug, Serialize, Deserialize)]
     pub struct TrackingResponse {
         pub event: String,
         pub data: TrackingData,
+    }
+
+    impl fmt::Display for TrackingResponse {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match serde_json::to_string(self) {
+                Ok(json_str) => write!(f, "{}", json_str),
+                Err(_) => write!(f, "error formatting tracking_data_webhook_update"),
+            }
+        }
     }
 
     /// either one of the events try to deserialize
@@ -444,7 +454,7 @@ pub mod tracking_data_webhook_update {
         number: String,
         carrier: i32,
         param: Option<()>,
-        tag: String,
+        tag: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize)]

@@ -4,6 +4,8 @@ use crate::{
 };
 use actix_web::{post, web, HttpRequest, HttpResponse, Responder};
 use chrono::Utc;
+use hex::encode;
+use sha2::{Digest, Sha256};
 
 /*
 
@@ -15,6 +17,10 @@ use chrono::Utc;
 pub enum webhook_error {
     #[error("Serde error: {0}")]
     SerdeError(#[from] serde_json::Error),
+    #[error("missing header with the signed digest")]
+    MissingHeaderSign,
+    #[error("sign failed - no match, abort")]
+    SignFailedNoMatch,
 }
 
 /*
@@ -72,6 +78,33 @@ pub async fn handle_webhook(
     // hello
     println!("human written console message: webhook received, my secret key is 123fuckyou456");
 
+    // check if the the header contains a sign value
+    let digest_from_api = match request.headers().get("sign") {
+        Some(header) => match header.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return HttpResponse::BadRequest().finish(),
+        },
+        None => return HttpResponse::BadRequest().finish(),
+    };
+    // concat payload + / + security key as strings
+    let digest_raw = payload.to_string() + "/" + &data.webhook_secret;
+    let digest_raw_test = "{\"event\":\"TRACKING_UPDATED\",\"data\":{\"number\":\"RR123456789CN\",\"carrier\":3011,\"tag\":null}}/".to_string() + &data.webhook_secret;
+    // get a sha256 digest of the string
+    let hash = Sha256::digest(&digest_raw);
+    let hash_test = Sha256::digest(&digest_raw_test);
+    // compare it to the sign value from the header
+    println!(" test {}", digest_raw_test);
+    println!(" test {}", encode(&hash_test));
+    println!("      {}", digest_raw);
+    println!("      {}", encode(&hash));
+    println!("");
+    println!("      {}", digest_from_api);
+    if digest_from_api != encode(&hash) {
+        println!("{}", webhook_error::SignFailedNoMatch);
+        return HttpResponse::BadRequest().finish();
+    }
+    //
+
     // print all headers
     println!("Received headers:");
     for (name, value) in request.headers().iter() {
@@ -81,14 +114,5 @@ pub async fn handle_webhook(
     // print the whole boomboclat thing
     println!("webhook received payload: {:?}", payload);
 
-    // Here you would:
-    // 1. Verify the webhook signature (if using) - skipped for now
-    // 2. Process the tracking update
-    // 3. Store in database or trigger actions
     HttpResponse::Ok().body("OK")
-    // Process the payload generically
-    // HttpResponse::Ok().json(serde_json::json!({
-    //     "status": "processed",
-    //     "processed_at": chrono::Utc::now().timestamp()
-    // }))
 }
