@@ -432,15 +432,6 @@ pub mod tracking_data_webhook_update {
         pub data: TrackingData,
     }
 
-    impl fmt::Display for TrackingResponse {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match serde_json::to_string(self) {
-                Ok(json_str) => write!(f, "{}", json_str),
-                Err(_) => write!(f, "error formatting tracking_data_webhook_update"),
-            }
-        }
-    }
-
     /// either one of the events try to deserialize
     #[derive(Debug, Serialize, Deserialize)]
     #[serde(untagged)]
