@@ -437,7 +437,7 @@ pub mod tracking_data_webhook_update {
     }
 
     impl TrackingResponse {
-        pub fn convert_to_TrackingData_DBF(&self) -> Option<TrackingData_DBF> {
+        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
             if let TrackingData::PackageData(accepted_package) = &self.data {
                 Some(TrackingData_DBF {
                     data: PackageData {
@@ -464,10 +464,10 @@ pub mod tracking_data_webhook_update {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct TrackingStopped {
-        number: String,
-        carrier: i32,
-        param: Option<()>,
-        tag: Option<String>,
+        pub number: String,
+        pub carrier: i32,
+        pub param: Option<()>,
+        pub tag: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -477,6 +477,20 @@ pub mod tracking_data_webhook_update {
         pub param: Option<()>,
         pub tag: String,
         pub track_info: track_info,
+    }
+
+    impl PackageDataWebhook {
+        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
+            Some(TrackingData_DBF {
+                data: PackageData {
+                    number: self.number.clone(),
+                    carrier: self.carrier.clone(),
+                    param: self.param.clone(),
+                    tag: self.tag.clone(),
+                    track_info: self.track_info.clone(),
+                },
+            })
+        }
     }
 }
 

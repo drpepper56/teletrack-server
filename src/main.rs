@@ -58,7 +58,7 @@ struct app_state {
 /// User structure
 #[derive(Debug, Deserialize, Serialize)]
 struct user {
-    user_id: String,
+    user_id: i64,
     user_id_hash: String,
     user_name: String,
 }
@@ -88,7 +88,7 @@ struct testing_data_format {
 // struct for getting user details from the client
 #[derive(Serialize, Deserialize, Debug)]
 struct user_details {
-    user_id: String,
+    user_id: i64,
     user_name: String,
 }
 
@@ -100,8 +100,9 @@ struct just_the_tracking_number {
 
 // struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
 // this also holds a bool that decides if the user is getting updates for the number or not
+// TODO: redundant with webhook
 #[derive(Serialize, Deserialize, Debug)]
-struct tracking_number_user_relation {
+pub struct tracking_number_user_relation {
     tracking_number: String,
     carrier: Option<i32>,
     user_id_hash: String,
@@ -267,7 +268,9 @@ async fn create_user(
     // create the user document
     let user = user {
         user_id: user_details.user_id.clone(),
-        user_id_hash: encode(Sha256::digest(user_details.user_id.as_bytes())),
+        user_id_hash: encode(Sha256::digest(
+            user_details.user_id.abs().to_string().as_bytes(),
+        )),
         user_name: user_details.user_name,
     };
 
@@ -289,9 +292,7 @@ async fn create_user(
     }
 
     // insert the user
-    let result = collection.insert_one(user, None).await;
-
-    match result {
+    match collection.insert_one(user, None).await {
         Ok(_) => Ok(true),
         Err(e) => Err(user_check_error::DatabaseError(e)),
     }

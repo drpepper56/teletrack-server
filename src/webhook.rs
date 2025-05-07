@@ -1,16 +1,23 @@
 use crate::{
-    app_state,
-    my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
-    my_structs::tracking_data_formats::tracking_data_webhook_update::TrackingResponse as webhook_update,
+    app_state, main,
+    my_structs::tracking_data_formats::{
+        tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
+        tracking_data_webhook_update::{
+            PackageDataWebhook, TrackingData, TrackingResponse as webhook_update,
+        },
+    },
+    notifications,
 };
 use actix_web::{body, post, web, FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
 use chrono::Utc;
+use futures::{StreamExt, TryStreamExt};
 use hex::encode;
 use mongodb::{
     bson::{de, doc},
     options::{ClientOptions, FindOneAndUpdateOptions, FindOptions},
     Client,
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /*
@@ -33,6 +40,25 @@ pub enum webhook_error {
     ErrorConvertingWebhookUpdate,
 }
 
+// struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
+// this also holds a bool that decides if the user is getting updates for the number or not
+// TODO: redundant with main
+#[derive(Serialize, Deserialize, Debug)]
+pub struct tracking_number_user_relation {
+    tracking_number: String,
+    carrier: Option<i32>,
+    user_id_hash: String,
+    is_subscribed: bool,
+}
+/// User structure
+// TODO: redundant with main
+#[derive(Debug, Deserialize, Serialize)]
+struct user {
+    user_id: i64,
+    user_id_hash: String,
+    user_name: String,
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     NOTIFICATION FUNCTIONS
@@ -45,14 +71,14 @@ pub enum webhook_error {
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
     // to what user //TODO: verify to which user using database
-    user_id: web::Path<i64>,
-) -> impl Responder {
+    user_id: i64,
+) -> Result<(), HttpResponse> {
     // access the service and deal with validation checks from the errors
     match &*data.notification_service {
         Ok(service) => {
             match service
                 .send_ma_notification(
-                    *user_id,
+                    user_id,
                     "Update on your order tracking.",
                     Some(vec![
                         ("balls", "new new params"),
@@ -61,11 +87,11 @@ async fn notify_of_tracking_event_update(
                 )
                 .await
             {
-                Ok(_) => HttpResponse::Ok().json("Notification sent successfully"),
-                Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+                Ok(_) => Ok(()),
+                Err(e) => Err(HttpResponse::InternalServerError().json(e.to_string())),
             }
         }
-        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+        Err(e) => Err(HttpResponse::InternalServerError().json(e.to_string())),
     }
 }
 
@@ -154,10 +180,10 @@ async fn verify_origin_body(
 /// Function used by webhook, takes the webhook update format of tracking update, converts to database form and refreshed the entry in the database
 async fn refresh_tracking_info_from_webhook_update(
     client: web::Data<Client>,
-    tracking_info_update: webhook_update,
+    tracking_info_update: PackageDataWebhook,
 ) -> Result<(), HttpResponse> {
-    // convert the webhook_update to tracking_data_database_form
-    let tracking_data_database_form = match tracking_info_update.convert_to_TrackingData_DBF() {
+    // convert the webhook_update_accepted_package to tracking_data_database_form
+    let tracking_data_database_form = match tracking_info_update.convert_to_tracking_data_dbf() {
         Some(data) => Ok(data),
         None => Err(webhook_error::ErrorConvertingWebhookUpdate),
     }
@@ -172,7 +198,7 @@ async fn refresh_tracking_info_from_webhook_update(
     // set filter to search for old data
     let filter = doc! {"data.number": &tracking_data_database_form.data.number};
     // delete any previous info with that tracking number
-    match collection_tracking_data.delete_many(filter, None).await {
+    let _ = match collection_tracking_data.delete_many(filter, None).await {
         Ok(delete_result) => {
             println!("deleted {} tracking data docs", delete_result.deleted_count);
             Ok(())
@@ -206,6 +232,88 @@ async fn refresh_tracking_info_from_webhook_update(
         }
     }
 }
+
+/// Function to get all users related to the tracking number from the database
+async fn get_user_ids_related_to_tracking_number(
+    client: web::Data<Client>,
+    tracking_number: String,
+) -> Result<Vec<i64>, HttpResponse> {
+    // set database, collection and filter
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+        db.collection("tracking_number_user_relation");
+    let filter_find_hash = doc! {"tracking_number": &tracking_number, "is_subscribed": true};
+
+    // get the result of the search
+    let relation_cursor = match collection_relations.find(filter_find_hash, None).await {
+        Ok(cursor) => Ok(cursor),
+        Err(e) => {
+            println!("database error 1: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // convert the result of the search into a vector of user id hashes
+    let user_id_hashes: Vec<String> = match relation_cursor
+        .try_collect::<Vec<tracking_number_user_relation>>()
+        .await
+    {
+        Ok(relations) => Ok(relations.into_iter().map(|r| r.user_id_hash).collect()),
+        Err(e) => {
+            println!("database error 2: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // set new collection and filter to look for true user IDs
+    let collection_users: mongodb::Collection<user> = db.collection("users");
+    let filter_find_id = doc! { "user_id_hash": { "$in": &user_id_hashes } };
+
+    // get the result of the search
+    let user_cursor = match collection_users.find(filter_find_id, None).await {
+        Ok(cursor) => Ok(cursor),
+        Err(e) => {
+            println!("database error 3: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // convert the result of the search into a vector of user IDs and return
+    match user_cursor.try_collect::<Vec<user>>().await {
+        Ok(users) => Ok(users.into_iter().map(|u| u.user_id).collect::<Vec<i64>>()),
+        Err(e) => {
+            println!("database error 4: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    //
+}
+
+/// Function to send notifications to all users from a vector of user ids
+async fn send_notifications_to_users(
+    data: web::Data<app_state>,
+    user_ids: Vec<i64>,
+) -> Vec<(i64, Result<(), HttpResponse>)> {
+    futures::stream::iter(user_ids.clone().into_iter().map(|user_id| {
+        let data = data.clone();
+        async move {
+            // call the notification function and save the outcome of each one
+            let response = notify_of_tracking_event_update(data, user_id).await;
+            (user_id, response)
+        }
+    }))
+    // run them all in parallel (None = unlimited concurrency)
+    .buffer_unordered(user_ids.len())
+    .collect()
+    .await
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     WEBHOOK
@@ -230,21 +338,62 @@ pub async fn handle_webhook(
     // println!("  {:?}", payload);
     println!("  {:?}", payload.event);
 
-    // split to two paths based on event, only test UPDATE rn
+    /*
+        Split to two paths based on the enum value of PackageData
+    */
+    if let TrackingData::PackageData(package_update) = payload.data {
+        // save the update in database in format
+        match refresh_tracking_info_from_webhook_update(client.clone(), package_update.clone())
+            .await
+        {
+            Ok(_) => {}
+            Err(response) => {
+                println!("unknown error trying to refresh database tracking info from update");
+                return response;
+            }
+        };
+        //
 
-    // save the update in database in format
-    match refresh_tracking_info_from_webhook_update(client.clone(), payload.clone()).await {
-        Ok(_) => {}
-        Err(response) => {
-            println!("unknown error trying to refresh database tracking info from update");
-            return response;
+        // get list of users to notify of the update
+        let user_ids_to_notify = match get_user_ids_related_to_tracking_number(
+            client.clone(),
+            package_update.number.clone(),
+        )
+        .await
+        {
+            Ok(user_ids) => Ok(user_ids),
+            Err(response) => {
+                println!(
+                    "failed to get user ID from the tracking number of the update, database fault"
+                );
+                Err(response)
+            }
         }
-    };
-    //
+        .unwrap();
+        //
 
-    // get list of users to notify of the update
+        if user_ids_to_notify.len() == 0 {
+            println!("no user to notify")
+        }
 
-    // call the update function
+        // call the update function on all IDs from the vector
+        let notifications_results =
+            send_notifications_to_users(data.clone(), user_ids_to_notify).await;
+
+        // open the results of sending notifications
+        for each_result in notifications_results {
+            // if there was an error, log it, but don't tell the API
+            if let Err(response) = each_result.1 {
+                println!("notification to {} failed", each_result.0);
+            } else if let Ok(_) = each_result.1 {
+                println!("notification to {} succeeded", each_result.0);
+            }
+        }
+    } else if let TrackingData::TrackingStopped(tracking_stopped) = payload.data {
+        println!("tracking stopped for package {}", tracking_stopped.number);
+    } else {
+        return HttpResponse::BadRequest().finish();
+    }
 
     HttpResponse::Ok().body(format!("{}", payload.event))
 }
