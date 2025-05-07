@@ -71,8 +71,8 @@ struct user {
 /// telegram environment and pass the data to be resolved in the mini app
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
-    // to what user //TODO: verify to which user using database
     user_id: i64,
+    notification_payload: tracking_data_HTML,
 ) -> Result<(), HttpResponse> {
     // access the service and deal with validation checks from the errors
     match &*data.notification_service {
@@ -81,10 +81,12 @@ async fn notify_of_tracking_event_update(
                 .send_ma_notification(
                     user_id,
                     "Update on your order tracking.",
-                    Some(vec![
-                        ("balls", "new new params"),
-                        ("balls2", "properly handled"),
-                    ]),
+                    Some(vec![(
+                        "package_update",
+                        serde_json::to_string(&notification_payload)
+                            .unwrap()
+                            .as_str(),
+                    )]),
                 )
                 .await
             {
@@ -300,12 +302,16 @@ async fn get_user_ids_related_to_tracking_number(
 async fn send_notifications_to_users(
     data: web::Data<app_state>,
     user_ids: Vec<i64>,
+    notification_payload: tracking_data_HTML,
 ) -> Vec<(i64, Result<(), HttpResponse>)> {
     futures::stream::iter(user_ids.clone().into_iter().map(|user_id| {
+        // one for each C:
         let data = data.clone();
+        let notification_payload = notification_payload.clone();
         async move {
             // call the notification function and save the outcome of each one
-            let response = notify_of_tracking_event_update(data, user_id).await;
+            let response =
+                notify_of_tracking_event_update(data, user_id, notification_payload).await;
             (user_id, response)
         }
     }))
@@ -377,9 +383,11 @@ pub async fn handle_webhook(
             println!("no user to notify")
         }
 
+        let client_payload = package_update.convert_to_tracking_data_html_form();
+
         // call the update function on all IDs from the vector
         let notifications_results =
-            send_notifications_to_users(data.clone(), user_ids_to_notify).await;
+            send_notifications_to_users(data.clone(), user_ids_to_notify, client_payload).await;
 
         // open the results of sending notifications
         for each_result in notifications_results {
