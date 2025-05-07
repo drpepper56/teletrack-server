@@ -81,12 +81,12 @@ async fn notify_of_tracking_event_update(
                 .send_ma_notification(
                     user_id,
                     "Update on your order tracking.",
-                    Some(vec![(
+                    (
                         "package_update",
                         serde_json::to_string(&notification_payload)
                             .unwrap()
                             .as_str(),
-                    )]),
+                    ),
                 )
                 .await
             {
@@ -97,8 +97,6 @@ async fn notify_of_tracking_event_update(
         Err(e) => Err(HttpResponse::InternalServerError().json(e.to_string())),
     }
 }
-
-// TODO: implement logic for notifying the right user of the update on their package
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

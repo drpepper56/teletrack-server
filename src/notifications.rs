@@ -67,25 +67,25 @@ impl notification_service {
         user_id: i64,
         message: &str,
         // optional parameters
-        params_pair: Option<Vec<(&str, &str)>>,
+        params_pair: (&str, &str),
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
         // they need to be all put in a json and encoded and put as a string as the start parameter (can change later to sending a link to DB parameters)
-        let mut map = serde_json::Map::new();
-        map.insert(
+        let mut parameter_map = serde_json::Map::new();
+        parameter_map.insert(
             "notification_id".to_string(),
             serde_json::json!(Utc::now().timestamp()),
         );
 
-        if let Some(params_pair) = params_pair {
-            for (key, value) in params_pair {
-                map.insert(key.to_string(), serde_json::json!(value));
-            }
-        }
+        // bismallah
+        parameter_map.insert(
+            params_pair.0.to_string(),
+            serde_json::json!(params_pair.1.to_string()),
+        );
 
         let startapp_value = base64::engine::general_purpose::URL_SAFE
-            .encode(serde_json::Value::Object(map).to_string());
+            .encode(serde_json::Value::Object(parameter_map).to_string());
         let deep_link = format!(
             "https://t.me/{}/{}?startapp={}",
             self.bot.get_me().await?.username(),
@@ -96,13 +96,16 @@ impl notification_service {
         // create the keyboard that can (and will) throw errors
         let keyboard = self.create_inline_keyboard(&deep_link)?;
         // send itttt
-        self.bot
+        match self
+            .bot
             .send_message(ChatId(user_id), message)
             .reply_markup(keyboard)
             .parse_mode(teloxide::types::ParseMode::Html)
-            .await?;
-
-        Ok(())
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(notification_service_error::TelegramError(e)),
+        }
     }
 
     // silent notification
