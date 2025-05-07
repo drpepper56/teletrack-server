@@ -2,6 +2,7 @@ use crate::{
     app_state, main,
     my_structs::tracking_data_formats::{
         tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
+        tracking_data_html_form::tracking_data_HTML,
         tracking_data_webhook_update::{
             PackageDataWebhook, TrackingData, TrackingResponse as webhook_update,
         },
@@ -314,6 +315,8 @@ async fn send_notifications_to_users(
     .await
 }
 
+/// Function to create the client info update payload to put in the notification
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     WEBHOOK
@@ -363,9 +366,7 @@ pub async fn handle_webhook(
         {
             Ok(user_ids) => Ok(user_ids),
             Err(response) => {
-                println!(
-                    "failed to get user ID from the tracking number of the update, database fault"
-                );
+                println!("failed to get user ID from the tracking number of the update");
                 Err(response)
             }
         }

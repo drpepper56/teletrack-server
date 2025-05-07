@@ -136,7 +136,9 @@ async fn register_single(
     let tracking_client = data.tracking_client.clone();
     match tracking_client.register_tracking(tracking_details).await {
         Ok(data) => Ok(data),
-        Err(tracking_error::TrackingNumberNotFoundByAPI) => Err(tracking_error::UnexpectedError),
+        Err(tracking_error::TrackingNumberNotFoundByAPI) => {
+            Err(tracking_error::TrackingNumberNotFoundByAPI)
+        }
         Err(e) => Err(e),
     }
 }
@@ -256,6 +258,7 @@ async fn check_user_exists(
 
 /// Create the user but before check again if the user already exists on the database, double check act as a guard in case this function is ever used in a context
 /// where it is not triggered by the predicted interaction
+// TODO: add lock so this can't be accessed while another thread is running this function
 async fn create_user(
     client: web::Data<Client>,
     user_details: user_details,
@@ -328,7 +331,11 @@ async fn check_relation(client: web::Data<Client>, tracking_number: &str, user_i
 }
 
 /// Function to insert a relation record between a user and a tracking number
-async fn insert_relation(client: web::Data<Client>, tracking_number: String, user_id_hash: String) {
+async fn insert_relation(
+    client: web::Data<Client>,
+    tracking_number: String,
+    user_id_hash: String,
+) -> Result<(), HttpResponse> {
     // create the relation record and put it in the database
     let tracking_user_relation: tracking_number_user_relation = tracking_number_user_relation {
         tracking_number: tracking_number,
@@ -342,7 +349,7 @@ async fn insert_relation(client: web::Data<Client>, tracking_number: String, use
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
     // insert the relation
-    let _ = match collection_relations
+    match collection_relations
         .insert_one(tracking_user_relation, None)
         .await
     {
@@ -355,9 +362,9 @@ async fn insert_relation(client: web::Data<Client>, tracking_number: String, use
                 "@CREATING_RELATION_RECORD: error inserting relation record: {}",
                 e
             );
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return Err(HttpResponse::InternalServerError().body(e.to_string()));
         }
-    };
+    }
     //
 }
 
@@ -438,11 +445,12 @@ async fn refresh_and_return_tracking_data(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
+    every function should check the hashed user ID and check if the user has permissions to do things on that number
+
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
-/// Function for writing to the database, later convert this to a function that can resolve many different type of writes like '.../write/update' or '.../write/register_number'
-/// Implement authenticating user with the utility functions
+/// testing: write to db
 async fn write_to_db_test(
     client: web::Data<Client>,
     data: web::Json<testing_data_format>,
@@ -470,7 +478,7 @@ async fn write_to_db_test(
     }
 }
 
-/// Function for reading from the database
+/// testing: reading from the database
 async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -> impl Responder {
     println!("reading from DB");
 
@@ -538,7 +546,6 @@ async fn create_user_handler(
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
 // TODO: buy something that will be shipped long time (for testing :-)
-// TODO: figure out what is relevant
 // TODO: add carrier search in a catch clause
 async fn register_tracking_number(
     client: web::Data<Client>,
@@ -595,29 +602,23 @@ async fn register_tracking_number(
     //
 
     // create the relation record and put it in the database
-    insert_relation(
+    match insert_relation(
         client.clone(),
         tracking_details.number.clone(),
         user_id_hash,
     )
-    .await;
-    //
-
-    // pull the tracking info about the number, if any old info is in the database - replace it
-    // set the new tracking info in the database and return it here to be processed and put in a response
-    match refresh_and_return_tracking_data(
-        client.clone(),
-        data.clone(),
-        tracking_details.number.clone(),
-    )
     .await
     {
-        Ok(result) => HttpResponse::Ok().json(result),
-        Err(http_response) => http_response,
+        Ok(_) => {
+            println!("relation record inserted");
+            Ok(HttpResponse::Ok().body("relation record inserted"))
+        }
+        Err(response) => {
+            println!("error inserting relation record");
+            Err(response)
+        }
     }
-    //
-
-    // TODO: figure out what is relevant
+    .unwrap()
 }
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that

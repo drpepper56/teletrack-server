@@ -1,135 +1,9 @@
-///  Base form structs that repeat
-pub mod tracking_data_base {
-    use serde::{Deserialize, Serialize};
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    FORMATS FOR THE API RESPONSES
 
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct track_info {
-        // here was the problem that took a whole day
-        pub lastGatherTime: Option<String>, //TODO: this can go tits up
-        pub shipping_info: shipping_info,
-        pub latest_status: status,
-        pub latest_event: event,
-        pub time_metrics: time_metrics,
-        pub milestone: Vec<milestone>,
-        pub misc_info: misc_info,
-        pub tracking: tracking_details,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct shipping_info {
-        pub shipper_address: address,
-        pub recipient_address: address,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct address {
-        pub country: Option<String>,
-        pub state: Option<String>,
-        pub city: Option<String>,
-        pub street: Option<String>,
-        pub postal_code: Option<String>,
-        pub coordinates: coordinates,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct coordinates {
-        pub longitude: Option<f64>,
-        pub latitude: Option<f64>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct status {
-        pub status: Option<String>,
-        pub sub_status: Option<String>,
-        pub sub_status_descr: Option<String>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct event {
-        pub time_iso: Option<String>,
-        pub time_utc: Option<String>,
-        pub time_raw: time_raw,
-        pub description: Option<String>,
-        pub location: Option<String>,
-        pub stage: Option<String>,
-        pub sub_status: Option<String>,
-        pub address: address,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct time_raw {
-        pub date: Option<String>,
-        pub time: Option<String>,
-        pub timezone: Option<String>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct time_metrics {
-        pub days_after_order: Option<i32>,
-        pub days_of_transit: Option<i32>,
-        pub days_of_transit_done: Option<i32>,
-        pub days_after_last_update: Option<i32>,
-        pub estimated_delivery_date: delivery_estimate,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct delivery_estimate {
-        pub source: Option<String>,
-        pub from: Option<String>,
-        pub to: Option<String>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct milestone {
-        pub key_stage: Option<String>,
-        pub time_iso: Option<String>,
-        pub time_utc: Option<String>,
-        pub time_raw: time_raw,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct misc_info {
-        pub risk_factor: i32,
-        pub service_type: Option<String>,
-        pub weight_raw: Option<String>,
-        pub weight_kg: Option<String>,
-        pub pieces: Option<String>,
-        pub dimensions: Option<String>,
-        pub customer_number: Option<String>,
-        pub reference_number: Option<String>,
-        pub local_number: Option<String>,
-        pub local_provider: Option<String>,
-        pub local_key: Option<i32>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct tracking_details {
-        pub providers_hash: Option<i32>,
-        pub providers: Vec<provider>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct provider {
-        pub provider: carrier_info,
-        pub provider_lang: Option<String>,
-        pub service_type: Option<String>,
-        pub latest_sync_status: Option<String>,
-        pub latest_sync_time: Option<String>,
-        pub events_hash: Option<i32>,
-        pub events: Vec<event>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct carrier_info {
-        pub key: Option<i32>,
-        pub name: Option<String>,
-        pub alias: Option<String>,
-        pub tel: Option<String>,
-        pub homepage: Option<String>,
-    }
-}
-
-// TODO: remove option wrapper from accepted and rejected arrays because it's at least an empty array always
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
 
 /// Register Tracking
 /*
@@ -399,7 +273,7 @@ pub mod tracking_data_get_info {
         pub number: String,
         pub carrier: i32,
         pub param: Option<()>,
-        pub tag: String,
+        pub tag: Option<String>,
         pub track_info: track_info,
     }
 
@@ -413,104 +287,6 @@ pub mod tracking_data_get_info {
     pub struct RejectedError {
         pub code: i32,
         pub message: String,
-    }
-}
-
-/// Webhook update
-/*
-    refer to:
-    https://api.17track.net/en/doc?version=v2.2&anchor=notification-status--content
-*/
-pub mod tracking_data_webhook_update {
-    use crate::{
-        my_structs::tracking_data_formats::tracking_data_base::track_info,
-        my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
-    };
-    use serde::{Deserialize, Serialize};
-
-    use super::tracking_data_database_form::PackageData;
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TrackingResponse {
-        pub event: String,
-        pub data: TrackingData,
-    }
-
-    impl TrackingResponse {
-        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
-            if let TrackingData::PackageData(accepted_package) = &self.data {
-                Some(TrackingData_DBF {
-                    data: PackageData {
-                        number: accepted_package.number.clone(),
-                        carrier: accepted_package.carrier.clone(),
-                        param: accepted_package.param.clone(),
-                        tag: accepted_package.tag.clone(),
-                        track_info: accepted_package.track_info.clone(),
-                    },
-                })
-            } else {
-                None
-            }
-        }
-    }
-
-    /// either one of the events try to deserialize
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    #[serde(untagged)]
-    pub enum TrackingData {
-        PackageData(PackageDataWebhook),
-        TrackingStopped(TrackingStopped),
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TrackingStopped {
-        pub number: String,
-        pub carrier: i32,
-        pub param: Option<()>,
-        pub tag: Option<String>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct PackageDataWebhook {
-        pub number: String,
-        pub carrier: i32,
-        pub param: Option<()>,
-        pub tag: String,
-        pub track_info: track_info,
-    }
-
-    impl PackageDataWebhook {
-        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
-            Some(TrackingData_DBF {
-                data: PackageData {
-                    number: self.number.clone(),
-                    carrier: self.carrier.clone(),
-                    param: self.param.clone(),
-                    tag: self.tag.clone(),
-                    track_info: self.track_info.clone(),
-                },
-            })
-        }
-    }
-}
-
-/// Custom format for storing in the database as a single tracking info
-pub mod tracking_data_database_form {
-    use crate::my_structs::tracking_data_formats::tracking_data_base::track_info;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct TrackingData_DBF {
-        pub data: PackageData,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct PackageData {
-        pub number: String,
-        pub carrier: i32,
-        pub param: Option<()>,
-        pub tag: String,
-        pub track_info: track_info,
     }
 }
 
@@ -595,9 +371,9 @@ pub mod tracking_number_meta_data {
         pub param: Option<()>,
         pub param_type: Option<String>,
         pub data_origin: Option<String>,
-        pub carrier: i32,
+        pub carrier: Option<i32>,
         pub shipping_country: Option<String>,
-        pub final_carrier: i32,
+        pub final_carrier: Option<i32>,
         pub recipient_country: Option<String>,
         pub register_time: Option<String>,
         pub tracking_status: String,
@@ -605,11 +381,11 @@ pub mod tracking_number_meta_data {
         pub track_time: Option<String>,
         pub push_time: Option<String>,
         pub push_status: Option<String>,
-        pub push_status_code: i32,
+        pub push_status_code: Option<i32>,
         pub stop_track_time: Option<String>,
         pub stop_track_reason: Option<String>,
-        pub is_retracked: bool,
-        pub carrier_change_count: i32,
+        pub is_retracked: Option<bool>,
+        pub carrier_change_count: Option<i32>,
         pub tag: Option<String>,
         pub email: Option<String>,
         pub order_no: Option<String>,
@@ -624,5 +400,378 @@ pub mod tracking_number_meta_data {
         pub days_of_transit_done: Option<String>,
         pub delievery_time: Option<String>,
         pub pickup_time: Option<String>,
+    }
+}
+
+/// Webhook update
+/*
+    refer to:
+    https://api.17track.net/en/doc?version=v2.2&anchor=notification-status--content
+*/
+pub mod tracking_data_webhook_update {
+    use crate::{
+        my_structs::tracking_data_formats::tracking_data_base::track_info,
+        my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
+    };
+    use serde::{Deserialize, Serialize};
+
+    use super::tracking_data_database_form::PackageData;
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct TrackingResponse {
+        pub event: String,
+        pub data: TrackingData,
+    }
+
+    impl TrackingResponse {
+        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
+            if let TrackingData::PackageData(accepted_package) = &self.data {
+                Some(TrackingData_DBF {
+                    data: PackageData {
+                        number: accepted_package.number.clone(),
+                        carrier: accepted_package.carrier.clone(),
+                        param: accepted_package.param.clone(),
+                        tag: accepted_package.tag.clone(),
+                        track_info: accepted_package.track_info.clone(),
+                    },
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    /// either one of the events try to deserialize
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    #[serde(untagged)]
+    pub enum TrackingData {
+        PackageData(PackageDataWebhook),
+        TrackingStopped(TrackingStopped),
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct TrackingStopped {
+        pub number: String,
+        pub carrier: i32,
+        pub param: Option<()>,
+        pub tag: Option<String>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct PackageDataWebhook {
+        pub number: String,
+        pub carrier: i32,
+        pub param: Option<()>,
+        pub tag: Option<String>,
+        pub track_info: super::tracking_data_base::track_info,
+    }
+
+    impl PackageDataWebhook {
+        // to dbf
+        pub fn convert_to_tracking_data_dbf(&self) -> Option<TrackingData_DBF> {
+            Some(TrackingData_DBF {
+                data: PackageData {
+                    number: self.number.clone(),
+                    carrier: self.carrier.clone(),
+                    param: self.param.clone(),
+                    tag: self.tag.clone(),
+                    track_info: self.track_info.clone(),
+                },
+            })
+        }
+        // to HTMLf
+        pub fn convert_to_tracking_data_html_form(
+            &self,
+        ) -> super::tracking_data_html_form::tracking_data_HTML {
+            super::tracking_data_html_form::tracking_data_HTML {
+                tracking_number: self.number.clone(),
+                tag: self.tag.clone(),
+                latest_event: self.track_info.latest_event.convert_to_HTML_event(),
+                providers_data: self
+                    .track_info
+                    .tracking
+                    .providers
+                    .iter()
+                    .map(|provider| provider.convert_to_HTML_provider())
+                    .collect(),
+                milestones: self
+                    .track_info
+                    .milestone
+                    .iter()
+                    .map(|milestone| milestone.convert_to_HTML_milestone())
+                    .collect(),
+                time_metrics: Some(self.track_info.time_metrics.clone()),
+            }
+        }
+    }
+}
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    CUSTOM FORMATS
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+///  Base form structs that repeat
+pub mod tracking_data_base {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct track_info {
+        // here was the problem that took a whole day
+        pub lastGatherTime: Option<String>, //TODO: this can go tits up
+        pub shipping_info: shipping_info,
+        pub latest_status: status,
+        pub latest_event: event,
+        pub time_metrics: time_metrics,
+        pub milestone: Vec<milestone>,
+        pub misc_info: misc_info,
+        pub tracking: tracking_details,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct shipping_info {
+        pub shipper_address: address,
+        pub recipient_address: address,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct address {
+        pub country: Option<String>,
+        pub state: Option<String>,
+        pub city: Option<String>,
+        pub street: Option<String>,
+        pub postal_code: Option<String>,
+        pub coordinates: coordinates,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct coordinates {
+        pub longitude: Option<f64>,
+        pub latitude: Option<f64>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct status {
+        pub status: Option<String>,
+        pub sub_status: Option<String>,
+        pub sub_status_descr: Option<String>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct event {
+        pub time_iso: Option<String>,
+        pub time_utc: Option<String>,
+        pub time_raw: time_raw,
+        pub description: Option<String>,
+        pub location: Option<String>,
+        pub stage: Option<String>,
+        pub sub_status: Option<String>,
+        pub address: address,
+    }
+
+    // convert event to HTML (smaller) event format
+    impl event {
+        pub fn convert_to_HTML_event(&self) -> super::tracking_data_html_form::event {
+            super::tracking_data_html_form::event {
+                description: self.description.clone(),
+                location: self.location.clone(),
+                stage: self.stage.clone(),
+                sub_status: self.sub_status.clone(),
+                address: Some(self.address.clone()),
+                time: Some(self.time_raw.clone()),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct time_raw {
+        pub date: Option<String>,
+        pub time: Option<String>,
+        pub timezone: Option<String>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct time_metrics {
+        pub days_after_order: Option<i32>,
+        pub days_of_transit: Option<i32>,
+        pub days_of_transit_done: Option<i32>,
+        pub days_after_last_update: Option<i32>,
+        pub estimated_delivery_date: delivery_estimate,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct delivery_estimate {
+        pub source: Option<String>,
+        pub from: Option<String>,
+        pub to: Option<String>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct milestone {
+        pub key_stage: Option<String>,
+        pub time_iso: Option<String>,
+        pub time_utc: Option<String>,
+        pub time_raw: time_raw,
+    }
+
+    // convert milestone to HTML milestone format
+    impl milestone {
+        pub fn convert_to_HTML_milestone(&self) -> super::tracking_data_html_form::milestone {
+            super::tracking_data_html_form::milestone {
+                key_stage: self.key_stage.clone(),
+                time: Some(self.time_raw.clone()),
+                touched: match Some(&self.time_raw) {
+                    Some(time) => true,
+                    None => false,
+                },
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct misc_info {
+        pub risk_factor: i32,
+        pub service_type: Option<String>,
+        pub weight_raw: Option<String>,
+        pub weight_kg: Option<String>,
+        pub pieces: Option<String>,
+        pub dimensions: Option<String>,
+        pub customer_number: Option<String>,
+        pub reference_number: Option<String>,
+        pub local_number: Option<String>,
+        pub local_provider: Option<String>,
+        pub local_key: Option<i32>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct tracking_details {
+        pub providers_hash: Option<i32>,
+        pub providers: Vec<provider>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct provider {
+        pub provider: carrier_info,
+        pub provider_lang: Option<String>,
+        pub service_type: Option<String>,
+        pub latest_sync_status: Option<String>,
+        pub latest_sync_time: Option<String>,
+        pub events_hash: Option<i32>,
+        pub events: Vec<event>,
+    }
+
+    // convert the provider to the HTML provider
+    impl provider {
+        pub fn convert_to_HTML_provider(
+            &self,
+        ) -> super::tracking_data_html_form::tracking_provider_provided_events {
+            super::tracking_data_html_form::tracking_provider_provided_events {
+                provider_name: self.provider.name.clone(),
+                provider_key: self.provider.key.clone(),
+                provider_events: self
+                    .events
+                    .iter()
+                    .map(|event| event.convert_to_HTML_event())
+                    .collect(),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct carrier_info {
+        pub key: Option<i32>,
+        pub name: Option<String>,
+        pub alias: Option<String>,
+        pub tel: Option<String>,
+        pub homepage: Option<String>,
+    }
+}
+
+/// form used to create html objects and send to the user
+// TODO: add functions that convert to HTML elements
+pub mod tracking_data_html_form {
+    use crate::my_structs::tracking_data_formats::tracking_data_base;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct tracking_data_HTML {
+        pub tracking_number: String,
+        pub tag: Option<String>,
+        pub latest_event: event,
+        pub providers_data: Vec<tracking_provider_provided_events>,
+        pub milestones: Vec<milestone>,
+        pub time_metrics: Option<tracking_data_base::time_metrics>,
+    }
+
+    // case where multiple providers kms
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct tracking_provider_provided_events {
+        pub provider_name: Option<String>,
+        pub provider_key: Option<i32>,
+        pub provider_events: Vec<event>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct event {
+        pub description: Option<String>,
+        pub location: Option<String>,
+        pub stage: Option<String>,
+        pub sub_status: Option<String>,
+        pub address: Option<tracking_data_base::address>,
+        pub time: Option<tracking_data_base::time_raw>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct milestone {
+        pub key_stage: Option<String>,
+        pub time: Option<tracking_data_base::time_raw>,
+        pub touched: bool,
+    }
+}
+/// Custom format for storing in the database as a single tracking info
+pub mod tracking_data_database_form {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct TrackingData_DBF {
+        pub data: PackageData,
+    }
+
+    // convert to HTML format
+    impl TrackingData_DBF {
+        pub fn convert_to_HTML_form(&self) -> super::tracking_data_html_form::tracking_data_HTML {
+            super::tracking_data_html_form::tracking_data_HTML {
+                tracking_number: self.data.number.clone(),
+                tag: self.data.tag.clone(),
+                latest_event: self.data.track_info.latest_event.convert_to_HTML_event(),
+                providers_data: self
+                    .data
+                    .track_info
+                    .tracking
+                    .providers
+                    .iter()
+                    .map(|provider| provider.convert_to_HTML_provider())
+                    .collect(),
+                milestones: self
+                    .data
+                    .track_info
+                    .milestone
+                    .iter()
+                    .map(|milestone| milestone.convert_to_HTML_milestone())
+                    .collect(),
+                time_metrics: Some(self.data.track_info.time_metrics.clone()),
+            }
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct PackageData {
+        pub number: String,
+        pub carrier: i32,
+        pub param: Option<()>,
+        pub tag: Option<String>,
+        pub track_info: super::tracking_data_base::track_info,
     }
 }
