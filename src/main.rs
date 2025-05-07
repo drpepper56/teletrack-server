@@ -858,20 +858,19 @@ async fn delete_tracking_number(
 
         // check the response from the database and delete the number from the API register if there are none
         if other_relations_count.unwrap() == 0 {
-            // println!("would delete but it's your only number registered for testing")
+            println!("delete from API would happen here but its been disabled for now");
             //TODO: put this back in later
-            let _ = match delete_number_single(data.clone(), tracking_number).await {
-                Ok(_) => {
-                    println!("number has been deleted on the API");
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
-                    Err(e)
-                }
-            };
+            // let _ = match delete_number_single(data.clone(), tracking_number).await {
+            //     Ok(_) => {
+            //         println!("number has been deleted on the API");
+            //         Ok(())
+            //     }
+            //     Err(e) => {
+            //         println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
+            //         Err(e)
+            //     }
+            // };
         }
-        //
 
         HttpResponse::Ok().finish() // professionalism
     } else {

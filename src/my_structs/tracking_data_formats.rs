@@ -39,18 +39,18 @@ pub mod tracking_data_base {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct status {
-        pub status: String,
+        pub status: Option<String>,
         pub sub_status: Option<String>,
         pub sub_status_descr: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct event {
-        pub time_iso: String,
-        pub time_utc: String,
+        pub time_iso: Option<String>,
+        pub time_utc: Option<String>,
         pub time_raw: time_raw,
-        pub description: String,
-        pub location: String,
+        pub description: Option<String>,
+        pub location: Option<String>,
         pub stage: Option<String>,
         pub sub_status: Option<String>,
         pub address: address,
@@ -65,10 +65,10 @@ pub mod tracking_data_base {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct time_metrics {
-        pub days_after_order: i32,
-        pub days_of_transit: i32,
-        pub days_of_transit_done: i32,
-        pub days_after_last_update: i32,
+        pub days_after_order: Option<i32>,
+        pub days_of_transit: Option<i32>,
+        pub days_of_transit_done: Option<i32>,
+        pub days_after_last_update: Option<i32>,
         pub estimated_delivery_date: delivery_estimate,
     }
 
@@ -81,7 +81,7 @@ pub mod tracking_data_base {
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct milestone {
-        pub key_stage: String,
+        pub key_stage: Option<String>,
         pub time_iso: Option<String>,
         pub time_utc: Option<String>,
         pub time_raw: time_raw,
@@ -99,12 +99,12 @@ pub mod tracking_data_base {
         pub reference_number: Option<String>,
         pub local_number: Option<String>,
         pub local_provider: Option<String>,
-        pub local_key: i32,
+        pub local_key: Option<i32>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct tracking_details {
-        pub providers_hash: i32,
+        pub providers_hash: Option<i32>,
         pub providers: Vec<provider>,
     }
 
@@ -113,9 +113,9 @@ pub mod tracking_data_base {
         pub provider: carrier_info,
         pub provider_lang: Option<String>,
         pub service_type: Option<String>,
-        pub latest_sync_status: String,
-        pub latest_sync_time: String,
-        pub events_hash: i32,
+        pub latest_sync_status: Option<String>,
+        pub latest_sync_time: Option<String>,
+        pub events_hash: Option<i32>,
         pub events: Vec<event>,
     }
 
