@@ -72,7 +72,7 @@ struct user {
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
     user_id: i64,
-    notification_payload: tracking_data_HTML,
+    tracking_number_that_was_updated: &str,
 ) -> Result<(), HttpResponse> {
     // access the service and deal with validation checks from the errors
     match &*data.notification_service {
@@ -81,7 +81,7 @@ async fn notify_of_tracking_event_update(
                 .send_ma_notification(
                     user_id,
                     "Update on your order tracking.",
-                    notification_payload,
+                    tracking_number_that_was_updated,
                 )
                 .await
             {
@@ -295,16 +295,16 @@ async fn get_user_ids_related_to_tracking_number(
 async fn send_notifications_to_users(
     data: web::Data<app_state>,
     user_ids: Vec<i64>,
-    notification_payload: tracking_data_HTML,
+    tracking_number_that_was_updated: &str,
 ) -> Vec<(i64, Result<(), HttpResponse>)> {
     futures::stream::iter(user_ids.clone().into_iter().map(|user_id| {
         // one for each C:
         let data = data.clone();
-        let notification_payload = notification_payload.clone();
         async move {
             // call the notification function and save the outcome of each one
             let response =
-                notify_of_tracking_event_update(data, user_id, notification_payload).await;
+                notify_of_tracking_event_update(data, user_id, tracking_number_that_was_updated)
+                    .await;
             (user_id, response)
         }
     }))
@@ -321,6 +321,13 @@ async fn send_notifications_to_users(
     WEBHOOK
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+/*
+    Since the miniapp is some hot garbage and it doesn't have any sensible way to transport a payload
+    through their notification (which would be really nice), we keep cheating them by sending more than
+    one parameters just out of spite (send the tracking number that will open the client tracking page
+    directly), the way the client will get the tracking data is through a https request
 */
 
 #[post("/webhook_17track")]
@@ -376,11 +383,10 @@ pub async fn handle_webhook(
             println!("no user to notify")
         }
 
-        let client_payload = package_update.convert_to_tracking_data_html_form();
-
         // call the update function on all IDs from the vector
         let notifications_results =
-            send_notifications_to_users(data.clone(), user_ids_to_notify, client_payload).await;
+            send_notifications_to_users(data.clone(), user_ids_to_notify, &package_update.number)
+                .await;
 
         // open the results of sending notifications
         for each_result in notifications_results {

@@ -67,7 +67,7 @@ impl notification_service {
         user_id: i64,
         message: &str,
         // optional parameters
-        payload: tracking_data_HTML,
+        tracking_number_that_was_updated: &str,
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
@@ -79,8 +79,10 @@ impl notification_service {
         );
 
         // bismallah
-        parameter_map.insert("package_update".to_string(), 
-        serde_json::json!("{\"event\":\"shipment\",\"data\":{\"tracking_number\":\"123ABC\",\"status\":\"delivered\"}}"));
+        parameter_map.insert(
+            "package_update".to_string(),
+            serde_json::json!(tracking_number_that_was_updated),
+        );
 
         // println!("{\"event\":\"shipment\",\"data\":{\"tracking_number\":\"123ABC\",\"status\":\"delivered\"}}");
 
