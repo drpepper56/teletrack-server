@@ -1114,6 +1114,10 @@ async fn main() -> std::io::Result<()> {
                 "/delete_tracking_number",
                 web::post().to(delete_tracking_number),
             )
+            .route(
+                "/get_tracking_data",
+                web::post().to(get_tracking_data_from_database),
+            )
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
             .service(create_user_options)
