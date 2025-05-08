@@ -10,7 +10,7 @@ use crate::{
     notifications,
 };
 use actix_web::{body, post, web, FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
-use chrono::Utc;
+use chrono::{format, Utc};
 use futures::{StreamExt, TryStreamExt};
 use hex::encode;
 use mongodb::{
@@ -72,17 +72,14 @@ struct user {
 async fn notify_of_tracking_event_update(
     data: web::Data<app_state>,
     user_id: i64,
+    message: &str,
     tracking_number_that_was_updated: &str,
 ) -> Result<(), HttpResponse> {
     // access the service and deal with validation checks from the errors
     match &*data.notification_service {
         Ok(service) => {
             match service
-                .send_ma_notification(
-                    user_id,
-                    "Update on your order tracking.",
-                    tracking_number_that_was_updated,
-                )
+                .send_ma_notification(user_id, message, tracking_number_that_was_updated)
                 .await
             {
                 Ok(_) => Ok(()),
@@ -295,6 +292,7 @@ async fn get_user_ids_related_to_tracking_number(
 async fn send_notifications_to_users(
     data: web::Data<app_state>,
     user_ids: Vec<i64>,
+    message: &str,
     tracking_number_that_was_updated: &str,
 ) -> Vec<(i64, Result<(), HttpResponse>)> {
     futures::stream::iter(user_ids.clone().into_iter().map(|user_id| {
@@ -302,9 +300,13 @@ async fn send_notifications_to_users(
         let data = data.clone();
         async move {
             // call the notification function and save the outcome of each one
-            let response =
-                notify_of_tracking_event_update(data, user_id, tracking_number_that_was_updated)
-                    .await;
+            let response = notify_of_tracking_event_update(
+                data,
+                user_id,
+                message,
+                tracking_number_that_was_updated,
+            )
+            .await;
             (user_id, response)
         }
     }))
@@ -383,15 +385,22 @@ pub async fn handle_webhook(
             println!("no user to notify")
         }
 
+        // build the message that will be displayed in the chat window and notification banner
+        let message =
+            "Update on your order tracking: ".to_string() + package_update.number.as_str();
         // call the update function on all IDs from the vector
-        let notifications_results =
-            send_notifications_to_users(data.clone(), user_ids_to_notify, &package_update.number)
-                .await;
+        let notifications_results = send_notifications_to_users(
+            data.clone(),
+            user_ids_to_notify,
+            &message,
+            &package_update.number,
+        )
+        .await;
 
         // open the results of sending notifications
         for each_result in notifications_results {
             // if there was an error, log it, but don't tell the API
-            if let Err(response) = each_result.1 {
+            if let Err(_response) = each_result.1 {
                 println!("notification to {} failed", each_result.0);
             } else if let Ok(_) = each_result.1 {
                 println!("notification to {} succeeded", each_result.0);
