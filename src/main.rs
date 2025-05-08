@@ -446,6 +446,7 @@ async fn refresh_and_return_tracking_data(
     ROUTING HANDLERS
 
     every function should check the hashed user ID and check if the user has permissions to do things on that number
+    TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -638,27 +639,15 @@ async fn stop_tracking_number(
     };
     //
 
-    // check if they have the number linked to them in a record
+    let tracking_number = tracking_data.into_inner().number.clone();
+    // set database, relation and filter
     let db = client.database("teletrack");
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
-    let tracking_number = tracking_data.into_inner().number.clone();
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
-    let permission_check = collection_relations.find_one(filter.clone(), None).await;
-    if let Ok(Some(relation_record)) = permission_check {
-        println!(
-            "relation record found, subscribed: {}",
-            relation_record.is_subscribed
-        );
-    } else if let Ok(None) = permission_check {
-        println!("relation record not found, no permission");
-        return HttpResponse::InternalServerError()
-            .body("user doesn't have access to that tracking number.");
-    } else if let Err(e) = permission_check {
-        println!("database error {}", e);
-        return HttpResponse::InternalServerError().body(e.to_string());
-    }
-    //
+
+    // check if the user has permission for that number
+    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
 
     // send request to the DB to change the is_subscribed value to false
     let database_update = doc! {"$set":{"is_subscribed": false}};
@@ -811,23 +800,14 @@ async fn delete_tracking_number(
     };
     //
 
-    // check if they have the number linked to them in a record
+    let tracking_number = tracking_data.into_inner().number.clone();
+    // set database, relation and filter
     let db = client.database("teletrack");
     let collection_relations: mongodb::Collection<tracking_number_user_relation> =
         db.collection("tracking_number_user_relation");
-    let tracking_number = tracking_data.into_inner().number.clone();
-    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
-    let permission_check = collection_relations.find_one(filter.clone(), None).await;
-    if let Ok(Some(_)) = permission_check {
-        println!("relation record found");
-    } else if let Ok(None) = permission_check {
-        println!("relation record not found, nothing to delete");
-        return HttpResponse::InternalServerError()
-            .body("user doesn't have have a record with this tracking number.");
-    } else if let Err(e) = permission_check {
-        println!("database error {}", e);
-        return HttpResponse::InternalServerError().body(e.to_string());
-    }
+
+    // check if the user has permission for that number
+    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
     //
 
     // send request to the DB to remove the relation record
@@ -879,6 +859,67 @@ async fn delete_tracking_number(
         println!("didn't delete the relation record because nothing was found");
         HttpResponse::InternalServerError().body("didn't delete")
     }
+}
+
+/// Function for the client to request the tracking data from the database, this will not call the API, it's going to be called when the user
+/// opens the tracking page on the client, be that from the starting screen or from a notification, this is the only method that returns the tracking
+/// data to the client because telegram miniapp is ass and doesn't have actual notifications
+async fn get_tracking_data_from_database(
+    client: web::Data<Client>,                     // for db
+    tracking_data: Json<just_the_tracking_number>, // for knowing which number to query
+    request: HttpRequest,                          // user in here
+) -> impl Responder {
+    // check if user exists
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+    //
+
+    let tracking_number = tracking_data.into_inner().number.clone();
+
+    // check if the user has permission for that number
+    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
+    //
+
+    // set database, relation and filter
+    let db = client.database("teletrack");
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    let filter = doc! {"data.number": &tracking_number};
+
+    // get the tracking data from the database
+    let query_result = match collection_tracking_data.find_one(filter, None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!(
+                "@get_tracking_data_from_database error, getting tracking data from db: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // open the result
+    let tracking_data = match query_result {
+        Some(tracking_data) => Ok(tracking_data),
+        None => {
+            println!("tracking data not found for the client query");
+            Err(HttpResponse::InternalServerError().body("no tracking data found for that number"))
+        }
+    }
+    .unwrap();
+    //
+
+    // convert the tracking data to the HTML form
+    let tracking_data_html = tracking_data.convert_to_HTML_form();
+
+    HttpResponse::Ok().body(serde_json::to_string(&tracking_data_html).unwrap())
+    //
 }
 
 /*
@@ -960,6 +1001,20 @@ async fn retrack_stopped_number_options() -> impl Responder {
 }
 #[options("/delete_tracking_number")]
 async fn delete_tracking_number_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/get_tracking_data")]
+async fn get_tracking_data_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -1066,6 +1121,7 @@ async fn main() -> std::io::Result<()> {
             .service(stop_tracking_number_options)
             .service(retrack_stopped_number_options)
             .service(delete_tracking_number_options)
+            .service(get_tracking_data_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
