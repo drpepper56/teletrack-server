@@ -81,12 +81,7 @@ async fn notify_of_tracking_event_update(
                 .send_ma_notification(
                     user_id,
                     "Update on your order tracking.",
-                    (
-                        "package_update",
-                        serde_json::to_string(&notification_payload)
-                            .unwrap()
-                            .as_str(),
-                    ),
+                    notification_payload,
                 )
                 .await
             {

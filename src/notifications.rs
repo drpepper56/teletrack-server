@@ -67,7 +67,7 @@ impl notification_service {
         user_id: i64,
         message: &str,
         // optional parameters
-        params_pair: (&str, &str),
+        payload: tracking_data_HTML,
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
         // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
@@ -79,19 +79,26 @@ impl notification_service {
         );
 
         // bismallah
-        parameter_map.insert(
-            params_pair.0.to_string(),
-            serde_json::json!(params_pair.1.to_string()),
-        );
+        parameter_map.insert("package_update".to_string(), 
+        serde_json::json!("{\"event\":\"shipment\",\"data\":{\"tracking_number\":\"123ABC\",\"status\":\"delivered\"}}"));
+
+        // println!("{\"event\":\"shipment\",\"data\":{\"tracking_number\":\"123ABC\",\"status\":\"delivered\"}}");
+
+        println!("{:?}", parameter_map);
 
         let startapp_value = base64::engine::general_purpose::URL_SAFE
             .encode(serde_json::Value::Object(parameter_map).to_string());
+
+        // println!("{}", startapp_value);
+
         let deep_link = format!(
             "https://t.me/{}/{}?startapp={}",
             self.bot.get_me().await?.username(),
             self.mini_app_name,
             startapp_value
         );
+
+        // println!("{}", deep_link);
 
         // create the keyboard that can (and will) throw errors
         let keyboard = self.create_inline_keyboard(&deep_link)?;
