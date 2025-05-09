@@ -302,7 +302,11 @@ async fn create_user(
 }
 
 /// Function to check if the user has a relation to the tracking number in the database
-async fn check_relation(client: web::Data<Client>, tracking_number: &str, user_id_hash: &str) {
+async fn check_relation(
+    client: web::Data<Client>,
+    tracking_number: &str,
+    user_id_hash: &str,
+) -> Result<(), HttpResponse> {
     // set database
     let db = client.database("teletrack");
     // set collection
@@ -313,19 +317,19 @@ async fn check_relation(client: web::Data<Client>, tracking_number: &str, user_i
     // find the relation record in the database
     let permission_check = collection_relations.find_one(filter.clone(), None).await;
     if let Ok(Some(relation_record)) = permission_check {
-        println!(
+        Ok(println!(
             "@PERMISSION_GRANTED: relation record found, subscribed: {}",
             relation_record.is_subscribed
-        );
+        ))
     } else if let Ok(None) = permission_check {
         println!("@NO_PERMISSION: relation record not found");
-        HttpResponse::InternalServerError()
-            .body("user doesn't have access to that tracking number.");
+        Err(HttpResponse::InternalServerError()
+            .body("user doesn't have access to that tracking number."))
     } else if let Err(e) = permission_check {
         println!("database error {}", e);
-        HttpResponse::InternalServerError().body(e.to_string());
+        Err(HttpResponse::InternalServerError().body(e.to_string()))
     } else {
-        HttpResponse::InternalServerError().body("error when checking permissions");
+        Err(HttpResponse::InternalServerError().body("error when checking permissions"))
     }
     //
 }
@@ -439,6 +443,20 @@ async fn refresh_and_return_tracking_data(
         }
     };
     insert_tracking_data_result
+}
+
+// Function for checking if a number is registered and getting some other useful information
+async fn check_number_registered(
+    data: web::Data<app_state>,
+    tracking_number: String,
+) -> Result<(), HttpResponse> {
+    match check_number_status_single(data.clone(), tracking_number).await {
+        Ok(_number_status) => Ok(()),
+        Err(e) => {
+            println!("error checking if number exists: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
 }
 
 /*
@@ -865,6 +883,7 @@ async fn delete_tracking_number(
 /// opens the tracking page on the client, be that from the starting screen or from a notification, this is the only method that returns the tracking
 /// data to the client because telegram miniapp is ass and doesn't have actual notifications
 async fn get_tracking_data_from_database(
+    data: web::Data<app_state>,
     client: web::Data<Client>,                     // for db
     tracking_data: Json<just_the_tracking_number>, // for knowing which number to query
     request: HttpRequest,                          // user in here
@@ -880,8 +899,16 @@ async fn get_tracking_data_from_database(
 
     let tracking_number = tracking_data.into_inner().number.clone();
 
+    // check if the number is registered
+    check_number_registered(data.clone(), tracking_number.clone())
+        .await
+        .unwrap();
+    //
+
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
+    check_relation(client.clone(), &tracking_number, &user_id_hash)
+        .await
+        .unwrap();
     //
 
     // set database, relation and filter

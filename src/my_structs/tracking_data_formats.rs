@@ -494,12 +494,6 @@ pub mod tracking_data_webhook_update {
                     .iter()
                     .map(|provider| provider.convert_to_HTML_provider())
                     .collect(),
-                milestones: self
-                    .track_info
-                    .milestone
-                    .iter()
-                    .map(|milestone| milestone.convert_to_HTML_milestone())
-                    .collect(),
                 time_metrics: Some(self.track_info.time_metrics.clone()),
             }
         }
@@ -616,20 +610,6 @@ pub mod tracking_data_base {
         pub time_raw: time_raw,
     }
 
-    // convert milestone to HTML milestone format
-    impl milestone {
-        pub fn convert_to_HTML_milestone(&self) -> super::tracking_data_html_form::milestone {
-            super::tracking_data_html_form::milestone {
-                key_stage: self.key_stage.clone(),
-                time: Some(self.time_raw.clone()),
-                touched: match Some(&self.time_raw) {
-                    Some(time) => true,
-                    None => false,
-                },
-            }
-        }
-    }
-
     #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct misc_info {
         pub risk_factor: i32,
@@ -701,7 +681,6 @@ pub mod tracking_data_html_form {
         pub tag: Option<String>,
         pub latest_event: event,
         pub providers_data: Vec<tracking_provider_provided_events>,
-        pub milestones: Vec<milestone>,
         pub time_metrics: Option<tracking_data_base::time_metrics>,
     }
 
@@ -721,13 +700,6 @@ pub mod tracking_data_html_form {
         pub sub_status: Option<String>,
         pub address: Option<tracking_data_base::address>,
         pub time: Option<tracking_data_base::time_raw>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct milestone {
-        pub key_stage: Option<String>,
-        pub time: Option<tracking_data_base::time_raw>,
-        pub touched: bool,
     }
 }
 /// Custom format for storing in the database as a single tracking info
@@ -753,13 +725,6 @@ pub mod tracking_data_database_form {
                     .providers
                     .iter()
                     .map(|provider| provider.convert_to_HTML_provider())
-                    .collect(),
-                milestones: self
-                    .data
-                    .track_info
-                    .milestone
-                    .iter()
-                    .map(|milestone| milestone.convert_to_HTML_milestone())
                     .collect(),
                 time_metrics: Some(self.data.track_info.time_metrics.clone()),
             }
