@@ -386,8 +386,16 @@ pub async fn handle_webhook(
         }
 
         // build the message that will be displayed in the chat window and notification banner
-        let message =
-            "Update on your order tracking: ".to_string() + package_update.number.as_str();
+        // dump the description
+        let message = "Update on your order tracking: ".to_string()
+            + package_update.number.as_str()
+            + "\n"
+            + package_update
+                .track_info
+                .latest_event
+                .description
+                .unwrap()
+                .as_str();
 
         // call the update function on all IDs from the vector
         let notifications_results = send_notifications_to_users(
