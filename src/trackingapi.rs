@@ -114,10 +114,11 @@ impl tracking_client {
         }
 
         let body_bytes = &response.bytes().await?;
-        // match String::from_utf8(body_bytes.to_vec()) {
-        //     Ok(text) => println!("Response text: {}", text),
-        //     Err(e) => println!("Response is not valid UTF-8: {:?}", e),
-        // }
+        // print
+        match String::from_utf8(body_bytes.to_vec()) {
+            Ok(text) => println!("Response text: {}", text),
+            Err(e) => println!("Response is not valid UTF-8: {:?}", e),
+        }
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @register_tracking_number_response instance
