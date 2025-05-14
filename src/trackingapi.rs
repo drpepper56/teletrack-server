@@ -26,8 +26,8 @@ pub enum tracking_error {
     UnexpectedError,
     #[error("API couldn't find the API number, retry with carrier number.")]
     TrackingNumberNotFoundByAPI,
-    #[error("Problem with api, or invalid data form sent")]
-    UnexpectedAPIerror,
+    #[error("invalid register tracking data format sent to the API")]
+    InvalidRegisterDataFormat,
     #[error("the number is for tracking a package that is marked as delivered, no new information will come and the number cannot be retracked")]
     AlreadyDelivered,
     #[error("the number you are trying to query may not ready yet, try again later or wait of the info to come trough the WEBHOOK")]
@@ -119,6 +119,7 @@ impl tracking_client {
             Ok(text) => println!("Response text: {}", text),
             Err(e) => println!("Response is not valid UTF-8: {:?}", e),
         }
+        println!("{:?}", tracking_details);
 
         // Parse the json of the response into the structures created with the 17track api docs
         // and return the @register_tracking_number_response instance
@@ -147,6 +148,11 @@ impl tracking_client {
                             return Err(tracking_error::TrackingAlreadyRegistered);
                             // resolve the error in references
                         }
+                        -18010013 => {
+                            // invalid data format sent to the API
+                            println!("invalid data format sent to the API");
+                            return Err(tracking_error::InvalidRegisterDataFormat);
+                        }
                         _ => {
                             println!(
                                 "number register error: {:?}",
@@ -156,7 +162,7 @@ impl tracking_client {
                         }
                     }
                 } else {
-                    Err(tracking_error::UnexpectedAPIerror)
+                    Err(tracking_error::UnexpectedError)
                 }
             }
             // error
