@@ -1,5 +1,5 @@
 use crate::{
-    app_state, main,
+    main,
     my_structs::tracking_data_formats::{
         tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
         tracking_data_html_form::tracking_data_HTML,
@@ -7,7 +7,7 @@ use crate::{
             PackageDataWebhook, TrackingData, TrackingResponse as webhook_update,
         },
     },
-    notifications,
+    notifications, AppState,
 };
 use actix_web::{body, post, web, FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
 use chrono::{format, Utc};
@@ -70,7 +70,7 @@ struct user {
 /// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
 /// telegram environment and pass the data to be resolved in the mini app
 async fn notify_of_tracking_event_update(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     user_id: i64,
     message: &str,
     tracking_number_that_was_updated: &str,
@@ -111,7 +111,7 @@ async fn get_raw_body_as_string(body: web::Bytes) -> Result<String, webhook_erro
 
 /// Function to verify 17Crack origin
 async fn verify_origin_body(
-    data: web::Data<crate::app_state>,
+    data: web::Data<crate::AppState>,
     request: HttpRequest,
     body: web::Bytes,
 ) -> Result<webhook_update, HttpResponse> {
@@ -290,7 +290,7 @@ async fn get_user_ids_related_to_tracking_number(
 
 /// Function to send notifications to all users from a vector of user ids
 async fn send_notifications_to_users(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     user_ids: Vec<i64>,
     message: &str,
     tracking_number_that_was_updated: &str,
@@ -334,7 +334,7 @@ async fn send_notifications_to_users(
 
 #[post("/webhook_17track")]
 pub async fn handle_webhook(
-    data: web::Data<crate::app_state>,
+    data: web::Data<crate::AppState>,
     client: web::Data<Client>,
     request: HttpRequest,
     body: web::Bytes,

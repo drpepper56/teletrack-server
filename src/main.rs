@@ -24,22 +24,20 @@ use actix_web::{
     web::{self, Json},
     App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use core::error;
 use dotenv::dotenv;
-use futures::{stream::StreamExt, stream::TryStreamExt};
+use futures::stream::StreamExt;
 use hex::encode;
 use mongodb::{
-    bson::{de, doc},
-    options::{ClientOptions, FindOneAndUpdateOptions, FindOptions},
+    bson::doc,
+    options::{ClientOptions, FindOptions},
     Client,
 };
 use notifications::{notification_service, notification_service_error};
-use reqwest::{Client as ReqwestClient, StatusCode};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{collections, env, f32::consts::E, result, sync::Arc};
-use trackingapi::{tracking_client, tracking_error};
+use std::{env, sync::Arc};
+use trackingapi::{just_the_tracking_number, tracking_client, tracking_error};
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -49,7 +47,7 @@ use trackingapi::{tracking_client, tracking_error};
 */
 
 /// struct for parameter in the main server thread
-struct app_state {
+struct AppState {
     notification_service: Arc<Result<notification_service, notification_service_error>>,
     tracking_client: Arc<tracking_client>,
     webhook_secret: String,
@@ -57,7 +55,7 @@ struct app_state {
 
 /// User structure
 #[derive(Debug, Deserialize, Serialize)]
-struct user {
+struct User {
     user_id: i64,
     user_id_hash: String,
     user_name: String,
@@ -65,7 +63,7 @@ struct user {
 
 /// ERORRS
 #[derive(Debug, thiserror::Error)]
-pub enum user_check_error {
+pub enum UserCheckError {
     #[error("head invalid")]
     InvalidHeader,
     #[error("no head?")]
@@ -80,29 +78,23 @@ pub enum user_check_error {
 
 /// struct for testing connections
 #[derive(Serialize, Deserialize, Debug)]
-struct testing_data_format {
+struct TestingDataFormat {
     key: String,
     value: String,
 }
 
 // struct for getting user details from the client
 #[derive(Serialize, Deserialize, Debug)]
-struct user_details {
+struct UserDetails {
     user_id: i64,
     user_name: String,
-}
-
-// just the tracking number
-#[derive(Serialize, Deserialize, Debug)]
-struct just_the_tracking_number {
-    number: String,
 }
 
 // struct for saving tracking number + carrier (optional) + user id hash as a relation record in the database
 // this also holds a bool that decides if the user is getting updates for the number or not
 // TODO: redundant with webhook
 #[derive(Serialize, Deserialize, Debug)]
-pub struct tracking_number_user_relation {
+pub struct TrackingNumberUserRelation {
     tracking_number: String,
     carrier: Option<i32>,
     user_id_hash: String,
@@ -118,7 +110,7 @@ pub struct tracking_number_user_relation {
 
 /// Function for calling the API to push for info on a single tracking number
 async fn pull_tracking_info(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<tracking_data_get_info, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -130,7 +122,7 @@ async fn pull_tracking_info(
 
 /// Function for calling the API to register a single tracking number
 async fn register_single(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_details: trackingapi::tracking_number_carrier,
 ) -> Result<register_tracking_number_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -145,7 +137,7 @@ async fn register_single(
 
 /// Function for calling the API to stop tracking a number
 async fn stop_tracking_single(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<stop_tracking_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -157,7 +149,7 @@ async fn stop_tracking_single(
 
 /// Function for calling the API to retrack a single number
 async fn retrack_stopped_number_single(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<retrack_stopped_number_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -172,7 +164,7 @@ async fn retrack_stopped_number_single(
 
 /// Function for calling the API to delete a single number from the saved numbers (destructive)
 async fn delete_number_single(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<delete_tracking_number_response, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -184,7 +176,7 @@ async fn delete_number_single(
 
 /// Function for calling the API to check the status and other information about a number that is registered
 async fn check_number_status_single(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<number_status_check, trackingapi::tracking_error> {
     let tracking_client = data.tracking_client.clone();
@@ -235,7 +227,7 @@ async fn check_user_exists(
     // search for the user id hash and return the actual ID if found, send errors otherwise
     // println!("@CHECK_USER_EXISTS: verifying user now...");
     let db = client.database("teletrack");
-    let collection: mongodb::Collection<user> = db.collection("users");
+    let collection: mongodb::Collection<User> = db.collection("users");
     let filter = doc! {"user_id_hash": user_id_hash};
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
@@ -261,15 +253,15 @@ async fn check_user_exists(
 // TODO: add lock so this can't be accessed while another thread is running this function
 async fn create_user(
     client: web::Data<Client>,
-    user_details: user_details,
-) -> Result<bool, user_check_error> {
+    user_details: UserDetails,
+) -> Result<bool, UserCheckError> {
     println!("@CREATE_USER: creating user now...");
 
     let db = client.database("teletrack");
-    let collection: mongodb::Collection<user> = db.collection("users");
+    let collection: mongodb::Collection<User> = db.collection("users");
 
     // create the user document
-    let user = user {
+    let user = User {
         user_id: user_details.user_id.clone(),
         user_id_hash: encode(Sha256::digest(
             user_details.user_id.abs().to_string().as_bytes(),
@@ -283,11 +275,11 @@ async fn create_user(
     match duplicate_present {
         Ok(Some(_)) => {
             println!("@CREATE_USER: user already exists");
-            return Err(user_check_error::UserAlreadyExists);
+            return Err(UserCheckError::UserAlreadyExists);
         }
         Err(e) => {
             eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
-            return Err(user_check_error::DatabaseError(e));
+            return Err(UserCheckError::DatabaseError(e));
         }
         Ok(None) => {
             println!("@CREATE_USER: user doesn't exist yet");
@@ -297,7 +289,7 @@ async fn create_user(
     // insert the user
     match collection.insert_one(user, None).await {
         Ok(_) => Ok(true),
-        Err(e) => Err(user_check_error::DatabaseError(e)),
+        Err(e) => Err(UserCheckError::DatabaseError(e)),
     }
 }
 
@@ -310,7 +302,7 @@ async fn check_relation(
     // set database
     let db = client.database("teletrack");
     // set collection
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
     // set search filter
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
@@ -341,7 +333,7 @@ async fn insert_relation(
     user_id_hash: String,
 ) -> Result<(), HttpResponse> {
     // create the relation record and put it in the database
-    let tracking_user_relation: tracking_number_user_relation = tracking_number_user_relation {
+    let tracking_user_relation: TrackingNumberUserRelation = TrackingNumberUserRelation {
         tracking_number: tracking_number,
         carrier: None,
         user_id_hash: user_id_hash,
@@ -350,7 +342,7 @@ async fn insert_relation(
     // set database
     let db = client.database("teletrack");
     // set collection
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
     // insert the relation
     match collection_relations
@@ -375,7 +367,7 @@ async fn insert_relation(
 /// Function to insert the tracking data in database format to the database
 async fn refresh_and_return_tracking_data(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<tracking_data_database_form, HttpResponse> {
     // pull the tracking information from the API
@@ -400,7 +392,7 @@ async fn refresh_and_return_tracking_data(
     //
 
     // convert the tracking_data_get_info to tracking_data_database_form
-    let tracking_data_database_form = gettrackinfo_result.unwrap().convert_to_TrackingData_DBF();
+    let tracking_data_database_form = gettrackinfo_result.unwrap().convert_to_tracking_data_dbf();
     // set database
     let db = client.database("teletrack");
     // set collection
@@ -447,7 +439,7 @@ async fn refresh_and_return_tracking_data(
 
 // Function for checking if a number is registered and getting some other useful information
 async fn check_number_registered(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_number: String,
 ) -> Result<(), HttpResponse> {
     match check_number_status_single(data.clone(), tracking_number).await {
@@ -472,7 +464,7 @@ async fn check_number_registered(
 /// testing: write to db
 async fn write_to_db_test(
     client: web::Data<Client>,
-    data: web::Json<testing_data_format>,
+    data: web::Json<TestingDataFormat>,
     request: HttpRequest,
 ) -> impl Responder {
     // check if user exists
@@ -481,7 +473,7 @@ async fn write_to_db_test(
         Ok(user_id) => {
             // start connection to DB
             let db = client.database("testbase");
-            let collection: mongodb::Collection<testing_data_format> = db.collection("test");
+            let collection: mongodb::Collection<TestingDataFormat> = db.collection("test");
             let result = collection.insert_one(data.into_inner(), None).await;
 
             match result {
@@ -498,11 +490,11 @@ async fn write_to_db_test(
 }
 
 /// testing: reading from the database
-async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -> impl Responder {
+async fn test_read(client: web::Data<Client>, data: Json<TestingDataFormat>) -> impl Responder {
     println!("reading from DB");
 
     let db = client.database("testbase");
-    let collection: mongodb::Collection<testing_data_format> = db.collection("test");
+    let collection: mongodb::Collection<TestingDataFormat> = db.collection("test");
 
     // let filter: mongodb::bson::Document = doc! {};
     let filter: mongodb::bson::Document = doc! {"key": data.into_inner().key}; // Corrected filter
@@ -541,7 +533,7 @@ async fn test_read(client: web::Data<Client>, data: Json<testing_data_format>) -
 async fn create_user_handler(
     client: web::Data<Client>,
     request: HttpRequest,
-    data: Json<user_details>,
+    data: Json<UserDetails>,
 ) -> impl Responder {
     // again check if user exists already
     match check_user_exists(client.clone(), request).await {
@@ -568,7 +560,7 @@ async fn create_user_handler(
 // TODO: add carrier search in a catch clause
 async fn register_tracking_number(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_details: web::Json<trackingapi::tracking_number_carrier>,
     request: HttpRequest,
 ) -> impl Responder {
@@ -609,7 +601,7 @@ async fn register_tracking_number(
 
     // check if a duplicate of the relation record exists
     let db = client.database("teletrack");
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
     let filter = doc! {"tracking_number": &tracking_details.number, "user_id_hash": &user_id_hash};
     let duplicate_relation_search = collection_relations.find_one(filter.clone(), None).await;
@@ -646,7 +638,7 @@ async fn register_tracking_number(
 /// number on the database before proceeding, update in two stages, turn off notifications then if no one else is linked to that number, untrack it
 async fn stop_tracking_number(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_data: Json<just_the_tracking_number>,
     request: HttpRequest, // user in here
 ) -> impl Responder {
@@ -663,7 +655,7 @@ async fn stop_tracking_number(
     let tracking_number = tracking_data.into_inner().number.clone();
     // set database, relation and filter
     let db = client.database("teletrack");
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
 
@@ -717,7 +709,7 @@ async fn stop_tracking_number(
 /// will be no check internally if the number is tracked already i made all those errors in the api file for a reason :-)
 async fn retrack_stopped_number(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_data: Json<just_the_tracking_number>,
     request: HttpRequest, // user in here
 ) -> impl Responder {
@@ -768,7 +760,7 @@ async fn retrack_stopped_number(
     // send request to the DB to change the is_subscribed value to true
     let database_update = doc! {"$set":{"is_subscribed": true}};
     let db = client.database("teletrack");
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     let update_result = match collection_relations
@@ -816,7 +808,7 @@ async fn retrack_stopped_number(
 /// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
 async fn delete_tracking_number(
     client: web::Data<Client>,
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     tracking_data: Json<just_the_tracking_number>,
     request: HttpRequest, // user in here
 ) -> impl Responder {
@@ -833,7 +825,7 @@ async fn delete_tracking_number(
     let tracking_number = tracking_data.into_inner().number.clone();
     // set database, relation and filter
     let db = client.database("teletrack");
-    let collection_relations: mongodb::Collection<tracking_number_user_relation> =
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
         db.collection("tracking_number_user_relation");
 
     // check if the user has permission for that number
@@ -900,7 +892,7 @@ async fn delete_tracking_number(
 /// opens the tracking page on the client, be that from the starting screen or from a notification, this is the only method that returns the tracking
 /// data to the client because telegram miniapp is ass and doesn't have actual notifications
 async fn get_tracking_data_from_database(
-    data: web::Data<app_state>,
+    data: web::Data<AppState>,
     client: web::Data<Client>,                     // for db
     tracking_data: Json<just_the_tracking_number>, // for knowing which number to query
     request: HttpRequest,                          // user in here
@@ -1109,7 +1101,7 @@ async fn main() -> std::io::Result<()> {
                 THREAD PARAMETERS
             */
             .app_data(web::Data::new(mongo_client.clone()))
-            .app_data(web::Data::new(app_state {
+            .app_data(web::Data::new(AppState {
                 notification_service: notification_service.clone(),
                 tracking_client: tracking_client.clone(),
                 webhook_secret: env::var("WEBHOOK_SECRET").expect("WEBHOOK_SECRET must be set"),

@@ -235,7 +235,7 @@ pub mod delete_tracking_number_response {
 */
 pub mod tracking_data_get_info {
     use crate::{
-        my_structs::tracking_data_formats::tracking_data_base::track_info,
+        my_structs::tracking_data_formats::tracking_data_base::TrackInfo,
         my_structs::tracking_data_formats::tracking_data_database_form::PackageData,
         my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
     };
@@ -248,7 +248,7 @@ pub mod tracking_data_get_info {
     }
 
     impl TrackingResponse {
-        pub fn convert_to_TrackingData_DBF(&self) -> TrackingData_DBF {
+        pub fn convert_to_tracking_data_dbf(&self) -> TrackingData_DBF {
             let accepted_package = self.data.accepted.first().expect("bad format of GETTRACKINFO method, error happened in converting it to the database format");
             TrackingData_DBF {
                 data: PackageData {
@@ -274,7 +274,7 @@ pub mod tracking_data_get_info {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: Option<String>,
-        pub track_info: track_info,
+        pub track_info: TrackInfo,
     }
 
     // Rejected
@@ -409,10 +409,7 @@ pub mod tracking_number_meta_data {
     https://api.17track.net/en/doc?version=v2.2&anchor=notification-status--content
 */
 pub mod tracking_data_webhook_update {
-    use crate::{
-        my_structs::tracking_data_formats::tracking_data_base::track_info,
-        my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF,
-    };
+    use crate::my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF;
     use serde::{Deserialize, Serialize};
 
     use super::tracking_data_database_form::PackageData;
@@ -463,7 +460,7 @@ pub mod tracking_data_webhook_update {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: Option<String>,
-        pub track_info: super::tracking_data_base::track_info,
+        pub track_info: super::tracking_data_base::TrackInfo,
     }
 
     impl PackageDataWebhook {
@@ -512,11 +509,11 @@ pub mod tracking_data_base {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct track_info {
-        // here was the problem that took a whole day
-        pub lastGatherTime: Option<String>, //TODO: this can go tits up
-        pub shipping_info: shipping_info,
-        pub latest_status: status,
+    pub struct TrackInfo {
+        // here was the problem that took a whole day, name has to stay like this
+        pub lastGatherTime: Option<String>,
+        pub shipping_info: ShippingInfo,
+        pub latest_status: Status,
         pub latest_event: event,
         pub time_metrics: time_metrics,
         pub milestone: Vec<milestone>,
@@ -525,29 +522,29 @@ pub mod tracking_data_base {
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct shipping_info {
-        pub shipper_address: address,
-        pub recipient_address: address,
+    pub struct ShippingInfo {
+        pub shipper_address: Address,
+        pub recipient_address: Address,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct address {
+    pub struct Address {
         pub country: Option<String>,
         pub state: Option<String>,
         pub city: Option<String>,
         pub street: Option<String>,
         pub postal_code: Option<String>,
-        pub coordinates: coordinates,
+        pub coordinates: Coordinates,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct coordinates {
+    pub struct Coordinates {
         pub longitude: Option<f64>,
         pub latitude: Option<f64>,
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct status {
+    pub struct Status {
         pub status: Option<String>,
         pub sub_status: Option<String>,
         pub sub_status_descr: Option<String>,
@@ -562,7 +559,7 @@ pub mod tracking_data_base {
         pub location: Option<String>,
         pub stage: Option<String>,
         pub sub_status: Option<String>,
-        pub address: address,
+        pub address: Address,
     }
 
     // convert event to HTML (smaller) event format
@@ -698,7 +695,7 @@ pub mod tracking_data_html_form {
         pub location: Option<String>,
         pub stage: Option<String>,
         pub sub_status: Option<String>,
-        pub address: Option<tracking_data_base::address>,
+        pub address: Option<tracking_data_base::Address>,
         pub time: Option<tracking_data_base::time_raw>,
     }
 }
@@ -737,6 +734,6 @@ pub mod tracking_data_database_form {
         pub carrier: i32,
         pub param: Option<()>,
         pub tag: Option<String>,
-        pub track_info: super::tracking_data_base::track_info,
+        pub track_info: super::tracking_data_base::TrackInfo,
     }
 }

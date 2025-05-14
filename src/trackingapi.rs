@@ -71,6 +71,11 @@ pub struct tracking_number_carrier {
     pub number: String,
     pub carrier: Option<i32>,
 }
+// just the tracking number
+#[derive(Serialize, Deserialize, Debug)]
+pub struct just_the_tracking_number {
+    pub number: String,
+}
 
 /*
 
@@ -215,7 +220,7 @@ impl tracking_client {
         // throw error if the API request wasn't processed
         if response_data.code == 1 {
             println!("CODE 1 FROM API: {:?}", response_data);
-            return Err(tracking_error::UnexpectedAPIerror);
+            return Err(tracking_error::UnexpectedError);
         }
 
         if response_data.data.accepted.len() == 1 {
@@ -325,7 +330,7 @@ impl tracking_client {
                         }
                     }
                 } else {
-                    Err(tracking_error::UnexpectedAPIerror)
+                    Err(tracking_error::UnexpectedError)
                 }
             }
             // error
@@ -403,7 +408,7 @@ impl tracking_client {
                         }
                     }
                 } else {
-                    Err(tracking_error::UnexpectedAPIerror)
+                    Err(tracking_error::UnexpectedError)
                 }
             }
             // error
@@ -482,7 +487,7 @@ impl tracking_client {
                         }
                     }
                 } else {
-                    Err(tracking_error::UnexpectedAPIerror)
+                    Err(tracking_error::UnexpectedError)
                 }
             }
             // error
@@ -545,7 +550,7 @@ impl tracking_client {
                     Ok(response_data)
                 } else {
                     println!("{:?}", response_data);
-                    Err(tracking_error::UnexpectedAPIerror)
+                    Err(tracking_error::UnexpectedError)
                 }
             }
             // error
