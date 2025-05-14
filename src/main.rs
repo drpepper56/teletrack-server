@@ -575,14 +575,15 @@ async fn register_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
-    // register the tracking number with the API
-    let _ = match register_single(data.clone(), tracking_details.clone()).await {
+    // register the tracking number with the API, throws error
+    match register_single(data.clone(), tracking_details.clone()).await {
         // continue
         Ok(_) => Ok(()),
         // tracking number was already registered, continue
@@ -602,7 +603,8 @@ async fn register_tracking_number(
             println!("@REGISTER_TRACKING_NUMBER:{}", e);
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
+    }
+    .unwrap();
     //
 
     // check if a duplicate of the relation record exists
@@ -651,10 +653,11 @@ async fn stop_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
@@ -665,7 +668,9 @@ async fn stop_tracking_number(
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
+    check_relation(client.clone(), &tracking_number, &user_id_hash)
+        .await
+        .unwrap();
 
     // send request to the DB to change the is_subscribed value to false
     let database_update = doc! {"$set":{"is_subscribed": false}};
@@ -679,11 +684,12 @@ async fn stop_tracking_number(
             println!("{}", e);
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
+    }
+    .unwrap();
     //
 
     // resolve the response from the database, it's a bit weird here
-    if update_result.unwrap().modified_count.clone() > 0 {
+    if update_result.modified_count.clone() > 0 {
         println!("successfully unsubscribed from a number by the user");
         // TODO: check if there are any other subscribed users that are linked to that file before and stop tracking it on the API if not
         // let _ = match stop_tracking_single(data.clone(), tracking_number.clone()).await {
@@ -718,16 +724,19 @@ async fn retrack_stopped_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
+    check_relation(client.clone(), &tracking_number, &user_id_hash)
+        .await
+        .unwrap();
 
     // get the data about this number from the API
     let number_status =
@@ -740,12 +749,13 @@ async fn retrack_stopped_number(
                 );
                 Err(e)
             }
-        };
+        }
+        .unwrap();
     //
 
     // get the important tracking and status information to check
-    let tracking_status = &number_status.as_ref().unwrap().data.accepted[0].tracking_status;
-    let package_status = &number_status.as_ref().unwrap().data.accepted[0].package_status;
+    let tracking_status = &number_status.data.accepted[0].tracking_status;
+    let package_status = &number_status.data.accepted[0].package_status;
 
     // if the package has been delivered do not update the subscribe value in the database
     if package_status == "Delivered" {
@@ -771,11 +781,12 @@ async fn retrack_stopped_number(
             println!("{}", e);
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
+    }
+    .unwrap();
     //
 
     // resolve the response from the database, return response if user was already subscribed
-    if update_result.unwrap().modified_count.clone() == 0 {
+    if update_result.modified_count.clone() == 0 {
         println!("found but not changed, was already set to true");
         return HttpResponse::InternalServerError().body("already subscribed to that number");
     }
@@ -784,7 +795,7 @@ async fn retrack_stopped_number(
 
     // activate it if it's stopped and not yet delivered
     if tracking_status == "Stopped" && package_status != "Delivered" {
-        let _ = match retrack_stopped_number_single(data.clone(), tracking_number).await {
+        match retrack_stopped_number_single(data.clone(), tracking_number).await {
             Ok(_) => {
                 println!("number has been re-tracked on the API");
                 Ok(())
@@ -793,7 +804,7 @@ async fn retrack_stopped_number(
                 println!("@RETRACK_STOPPED_NUMBER: error re-tracking_number: {},", e);
                 Err(HttpResponse::InternalServerError().body("the number you are trying to retrack has been retracked before and cant be retracked again."))
             }
-        };
+        }.unwrap();
     }
     //
 
@@ -812,10 +823,11 @@ async fn delete_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
@@ -825,7 +837,9 @@ async fn delete_tracking_number(
         db.collection("tracking_number_user_relation");
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash).await;
+    check_relation(client.clone(), &tracking_number, &user_id_hash)
+        .await
+        .unwrap();
     //
 
     // send request to the DB to remove the relation record
@@ -837,26 +851,29 @@ async fn delete_tracking_number(
             println!("{}", e);
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
+    }
+    .unwrap();
     //
 
     // resolve the delete response from the database
-    if update_result.unwrap().deleted_count.clone() > 0 {
+    if update_result.deleted_count > 0 {
         println!("successfully deleted the relation record from the database");
 
         // check if there are any other relation docs with that number
         let filter = doc! {"tracking_number": &tracking_number};
-        let other_relations_count = match collection_relations.count_documents(filter, None).await {
-            Ok(res) => Ok(res),
-            Err(e) => {
-                println!("{}", e);
-                Err(HttpResponse::InternalServerError().body(e.to_string()))
+        let other_relations_count =
+            match collection_relations.count_documents(filter, None).await {
+                Ok(res) => Ok(res),
+                Err(e) => {
+                    println!("{}", e);
+                    Err(HttpResponse::InternalServerError().body(e.to_string()))
+                }
             }
-        };
+            .unwrap();
         //
 
         // check the response from the database and delete the number from the API register if there are none
-        if other_relations_count.unwrap() == 0 {
+        if other_relations_count == 0 {
             println!("delete from API would happen here but its been disabled for now");
             //TODO: put this back in later
             // let _ = match delete_number_single(data.clone(), tracking_number).await {
@@ -905,7 +922,7 @@ async fn get_tracking_data_from_database(
         .unwrap();
     //
 
-    // check if the user has permission for that number
+    // check if the user has permission for that number, also checks if the number is registered
     check_relation(client.clone(), &tracking_number, &user_id_hash)
         .await
         .unwrap();
