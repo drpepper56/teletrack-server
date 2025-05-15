@@ -189,6 +189,51 @@ async fn check_number_status_single(
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    DATABASE FUNCTIONS
+    TODO: function
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+/// GET tracking data from tracking number
+async fn database_tracking_data_from_number(
+    client: web::Data<Client>,
+    tracking_number: &str,
+) -> tracking_data_database_form {
+    // set database, relation and filter for getting tracking data
+    let db = client.database("teletrack");
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    let filter = doc! {"data.number": &tracking_number};
+
+    // get the tracking data from the database
+    let query_result = match collection_tracking_data.find_one(filter, None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!(
+                "@get_tracking_data_from_database error, getting tracking data from db: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // open the result
+    match query_result {
+        Some(tracking_data) => Ok(tracking_data),
+        None => {
+            println!("tracking data not found for the client query");
+            Err(HttpResponse::InternalServerError().body("no tracking data found for that number"))
+        }
+    }
+    .unwrap()
+    //
+}
+//
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     UTILITY FUNCTIONS
     TODO: function
     TODO: get the values for database and collection from one constant instead of writing them in each function
@@ -580,13 +625,14 @@ async fn register_tracking_number(
     //
 
     // register the tracking number with the API, throws error
-    match register_single(data.clone(), tracking_details.clone()).await {
+    // the bool value is for knowing whether to pull the tracking info to simulate a webhook update for the user
+    let was_registered = match register_single(data.clone(), tracking_details.clone()).await {
         // continue
-        Ok(_) => Ok(()),
+        Ok(_) => Ok(false),
         // tracking number was already registered, continue
         Err(tracking_error::TrackingAlreadyRegistered) => {
             println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
-            Ok(()) // it's okay if it's not registered+stopped on the API
+            Ok(true) // it's okay if it's not registered+stopped on the API
         }
         // tracking number not found by the API
         Err(tracking_error::TrackingNumberNotFoundByAPI) => {
@@ -623,20 +669,66 @@ async fn register_tracking_number(
     match insert_relation(
         client.clone(),
         tracking_details.number.clone(),
-        user_id_hash,
+        user_id_hash.clone(),
     )
     .await
     {
         Ok(_) => {
             println!("relation record inserted");
-            Ok(HttpResponse::Ok().body("relation record inserted"))
+            Ok(())
         }
         Err(response) => {
             println!("error inserting relation record");
             Err(response)
         }
     }
-    .unwrap()
+    .unwrap();
+
+    if !was_registered {
+        HttpResponse::Ok().body("relation record inserted");
+    }
+    // simulate the webhook update if the tracking number was already registered
+
+    // get user id
+    let collection_users: mongodb::Collection<User> = db.collection("user");
+    let filter = doc! {"user_id_hash": &user_id_hash};
+    let user_id = match collection_users.find_one(filter.clone(), None).await {
+        Ok(Some(user)) => Ok(user.user_id),
+        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
+        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
+    }
+    .unwrap();
+    //
+
+    // get tracking info from database
+    let tracking_data =
+        database_tracking_data_from_number(client.clone(), &tracking_details.number).await;
+    //
+
+    // convert the tracking data to html format
+    let tracking_data_html = tracking_data.convert_to_HTML_form();
+
+    // build the message that will be displayed in the chat window and notification banner
+    // dump the description
+    let message = "Update on your order tracking: ".to_string()
+        + tracking_data_html.tracking_number.as_str()
+        + "\n"
+        + tracking_data_html
+            .latest_event
+            .description
+            .unwrap()
+            .as_str();
+
+    // me ne frega
+    let _ = webhook::notify_of_tracking_event_update(
+        data.clone(),
+        user_id,
+        &message,
+        &tracking_details.number,
+    )
+    .await;
+
+    HttpResponse::Ok().body("relation record inserted")
 }
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that
@@ -919,42 +1011,14 @@ async fn get_tracking_data_from_database(
         .unwrap();
     //
 
-    // set database, relation and filter
-    let db = client.database("teletrack");
-    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
-        db.collection("tracking_data");
-    let filter = doc! {"data.number": &tracking_number};
-
-    // get the tracking data from the database
-    let query_result = match collection_tracking_data.find_one(filter, None).await {
-        Ok(query_result) => Ok(query_result),
-        Err(e) => {
-            println!(
-                "@get_tracking_data_from_database error, getting tracking data from db: {}",
-                e
-            );
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
-        }
-    }
-    .unwrap();
-    //
-
-    // open the result
-    let tracking_data = match query_result {
-        Some(tracking_data) => Ok(tracking_data),
-        None => {
-            println!("tracking data not found for the client query");
-            Err(HttpResponse::InternalServerError().body("no tracking data found for that number"))
-        }
-    }
-    .unwrap();
+    // get the tracking data from database
+    let tracking_data = database_tracking_data_from_number(client.clone(), &tracking_number).await;
     //
 
     // convert the tracking data to the HTML form
     let tracking_data_html = tracking_data.convert_to_HTML_form();
 
     HttpResponse::Ok().body(serde_json::to_string(&tracking_data_html).unwrap())
-    //
 }
 
 /// Function for responding to a user request for all their tracked numbers' tracking details and events

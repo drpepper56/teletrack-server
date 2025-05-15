@@ -181,7 +181,6 @@ impl tracking_client {
     }
 
     /// Pull tracking information for one tracking number, works only after a number has been registered
-    // TODO: force retrack when getting a response that the number has been stopped, then either re send the request or make it come via the webhook with a tag to know what it's for
     pub async fn gettrackinfo_pull(
         &self,
         tracking_number: &str,

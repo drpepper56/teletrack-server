@@ -69,7 +69,7 @@ struct user {
 
 /// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
 /// telegram environment and pass the data to be resolved in the mini app
-async fn notify_of_tracking_event_update(
+pub async fn notify_of_tracking_event_update(
     data: web::Data<AppState>,
     user_id: i64,
     message: &str,
