@@ -15,6 +15,7 @@ use crate::{
     my_structs::tracking_data_formats::stop_tracking_response::StopTrackingResponse as stop_tracking_response,
     my_structs::tracking_data_formats::tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
     my_structs::tracking_data_formats::tracking_data_get_info::TrackingResponse as tracking_data_get_info,
+    my_structs::tracking_data_formats::tracking_data_html_form::tracking_data_HTML,
     my_structs::tracking_data_formats::tracking_number_meta_data::NumberStatusCheck as number_status_check,
 };
 use actix_cors::Cors;
@@ -25,7 +26,7 @@ use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use dotenv::dotenv;
-use futures::stream::StreamExt;
+use futures::{stream::StreamExt, TryStreamExt};
 use hex::encode;
 use mongodb::{
     bson::doc,
@@ -206,29 +207,28 @@ async fn check_user_exists(
         Some(header) => match header.to_str() {
             Ok(s) => {
                 // println!("@CHECK_USER_EXISTS: {}", s);
-                s.to_string()
+                Ok(s.to_string())
             }
             Err(_) => {
                 println!("invalid header");
-                return Err(HttpResponse::BadRequest().json(
+                Err(HttpResponse::BadRequest().json(
                     serde_json::json!({"request header error": "missing header X-USER-ID-HASH"}),
-                ));
+                ))
             }
         },
         None => {
             println!("no hhead?");
-            return Err(
-                HttpResponse::BadRequest().json(serde_json::json!({"header error": "no head?"}))
-            );
+            Err(HttpResponse::BadRequest().json(serde_json::json!({"header error": "no head?"})))
         }
-    };
+    }
+    .unwrap();
 
     // chose the right database and collection
     // search for the user id hash and return the actual ID if found, send errors otherwise
     // println!("@CHECK_USER_EXISTS: verifying user now...");
     let db = client.database("teletrack");
     let collection: mongodb::Collection<User> = db.collection("users");
-    let filter = doc! {"user_id_hash": user_id_hash};
+    let filter = doc! {"user_id_hash": &user_id_hash};
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
             println!("@CHECK_USER_EXISTS: user found: {:?}", user);
@@ -271,20 +271,21 @@ async fn create_user(
 
     // check if the user exists already
     let filter = doc! {"user_id_hash": &user.user_id_hash};
-    let duplicate_present = collection.find_one(filter, None).await;
-    match duplicate_present {
+    match collection.find_one(filter, None).await {
         Ok(Some(_)) => {
             println!("@CREATE_USER: user already exists");
-            return Err(UserCheckError::UserAlreadyExists);
-        }
-        Err(e) => {
-            eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
-            return Err(UserCheckError::DatabaseError(e));
+            Err(UserCheckError::UserAlreadyExists)
         }
         Ok(None) => {
             println!("@CREATE_USER: user doesn't exist yet");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("@CREATE_USER: database error in @CREATE_USER: {}", e);
+            Err(UserCheckError::DatabaseError(e))
         }
     }
+    .unwrap();
 
     // insert the user
     match collection.insert_one(user, None).await {
@@ -388,11 +389,12 @@ async fn refresh_and_return_tracking_data(
             );
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
+    }
+    .unwrap();
     //
 
     // convert the tracking_data_get_info to tracking_data_database_form
-    let tracking_data_database_form = gettrackinfo_result.unwrap().convert_to_tracking_data_dbf();
+    let tracking_data_database_form = gettrackinfo_result.convert_to_tracking_data_dbf();
     // set database
     let db = client.database("teletrack");
     // set collection
@@ -401,7 +403,7 @@ async fn refresh_and_return_tracking_data(
     let filter = doc! {"data.number": &tracking_number};
 
     // delete any previous info with that tracking number
-    let _ = match collection_tracking_data.delete_many(filter, None).await {
+    match collection_tracking_data.delete_many(filter, None).await {
         Ok(delete_result) => {
             println!("deleted {} tracking data docs", delete_result.deleted_count);
             Ok(())
@@ -413,11 +415,12 @@ async fn refresh_and_return_tracking_data(
             );
             Err(e)
         }
-    };
+    }
+    .unwrap();
     //
 
     // insert the fresh tracking info into the database
-    let insert_tracking_data_result = match collection_tracking_data
+    match collection_tracking_data
         .insert_one(tracking_data_database_form.clone(), None)
         .await
     {
@@ -433,8 +436,7 @@ async fn refresh_and_return_tracking_data(
             );
             Err(HttpResponse::InternalServerError().body(e.to_string()))
         }
-    };
-    insert_tracking_data_result
+    }
 }
 
 // Function for checking if a number is registered and getting some other useful information
@@ -455,8 +457,10 @@ async fn check_number_registered(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
-    every function should check the hashed user ID and check if the user has permissions to do things on that number
+    TODO: every function should check the hashed user ID and check if the user has permissions to do things on that number
     TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
+    TODO: do a sign hash verification on each request with a shared key before this is public
+
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -535,6 +539,7 @@ async fn create_user_handler(
     request: HttpRequest,
     data: Json<UserDetails>,
 ) -> impl Responder {
+    // if it aint broke dont fix it
     // again check if user exists already
     match check_user_exists(client.clone(), request).await {
         // user already exists
@@ -958,6 +963,90 @@ async fn get_tracking_data_from_database(
     //
 }
 
+/// Function for responding to a user request for all their tracked numbers' tracking details and events
+// TODO: faf around and find out @$lookup doc joint search actual SQL
+async fn get_user_tracked_numbers_details(
+    client: web::Data<Client>, // for db
+    request: HttpRequest,      // user in here
+) -> impl Responder {
+    // check if user exists
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+    //
+
+    // set database, relation and filter
+    let db = client.database("teletrack");
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
+        db.collection("tracking_number_user_relation");
+    let filter = doc! {"user_id_hash": &user_id_hash};
+
+    // TODO: faf around and find out @$lookup doc joint search actual SQL
+
+    // get a result of a search for all the user's tracked numbers
+    let tracking_numbers_cursor = match collection_relations.find(filter.clone(), None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // convert the cursor to a list of tracking numbers that the user is tracking
+    let user_tracked_numbers: Vec<String> = match tracking_numbers_cursor
+        .try_collect::<Vec<TrackingNumberUserRelation>>()
+        .await
+    {
+        Ok(relations) => Ok(relations.into_iter().map(|r| r.tracking_number).collect()),
+        Err(e) => {
+            println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // set database, relation and filter for tracking data
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    let filter = doc! {"number": { "$in": &user_tracked_numbers }};
+
+    // get every tracking numbers' details from the database
+    let tracking_data_cursor = match collection_tracking_data.find(filter, None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // convert the cursor to a vector of tracking data HTML form
+    let user_tracked_numbers_details: Vec<tracking_data_HTML> = match tracking_data_cursor
+        .try_collect::<Vec<tracking_data_database_form>>()
+        .await
+    {
+        Ok(relations) => Ok(relations
+            .into_iter()
+            .map(|r| r.convert_to_HTML_form())
+            .collect()),
+        Err(e) => {
+            println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    HttpResponse::Ok().json(user_tracked_numbers_details)
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -1051,6 +1140,20 @@ async fn delete_tracking_number_options() -> impl Responder {
 }
 #[options("/get_tracking_data")]
 async fn get_tracking_data_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
+#[options("/get_user_tracked_numbers_details")]
+async fn get_user_tracked_numbers_details_options() -> impl Responder {
     HttpResponse::NoContent()
         .insert_header((
             "Access-Control-Allow-Origin",
@@ -1162,6 +1265,7 @@ async fn main() -> std::io::Result<()> {
             .service(retrack_stopped_number_options)
             .service(delete_tracking_number_options)
             .service(get_tracking_data_options)
+            .service(get_user_tracked_numbers_details_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port

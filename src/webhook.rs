@@ -227,6 +227,7 @@ async fn refresh_tracking_info_from_webhook_update(
 }
 
 /// Function to get all users related to the tracking number from the database
+// TODO: faf around and find out @$lookup doc joint search actual SQL
 async fn get_user_ids_related_to_tracking_number(
     client: web::Data<Client>,
     tracking_number: String,
@@ -339,15 +340,16 @@ pub async fn handle_webhook(
     request: HttpRequest,
     body: web::Bytes,
 ) -> impl Responder {
+    // check the sign to verify it's from the api
     let payload = match verify_origin_body(data.clone(), request.clone(), body.clone()).await {
         Ok(payload) => payload,
         Err(e) => return e,
     };
 
-    println!("webhook received payload and extracted");
+    // println!("webhook received payload and extracted");
     // print the whole boomboclat thing
     // println!("  {:?}", payload);
-    println!("  {:?}", payload.event);
+    // println!("  {:?}", payload.event);
 
     /*
         Split to two paths based on the enum value of PackageData
