@@ -897,7 +897,6 @@ async fn delete_tracking_number(
 /// opens the tracking page on the client, be that from the starting screen or from a notification, this is the only method that returns the tracking
 /// data to the client because telegram miniapp is ass and doesn't have actual notifications
 async fn get_tracking_data_from_database(
-    data: web::Data<AppState>,
     client: web::Data<Client>,                     // for db
     tracking_data: Json<just_the_tracking_number>, // for knowing which number to query
     request: HttpRequest,                          // user in here
@@ -905,19 +904,14 @@ async fn get_tracking_data_from_database(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
-
-    // check if the number is registered
-    check_number_registered(data.clone(), tracking_number.clone())
-        .await
-        .unwrap();
-    //
 
     // check if the user has permission for that number, also checks if the number is registered
     check_relation(client.clone(), &tracking_number, &user_id_hash)
@@ -972,10 +966,11 @@ async fn get_user_tracked_numbers_details(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => user_id,
+        Ok(user_id) => Ok(user_id),
         // user doesn't exist, respond with 520
-        Err(response) => return response,
-    };
+        Err(response) => Err(response),
+    }
+    .unwrap();
     //
 
     // set database, relation and filter
@@ -1014,7 +1009,7 @@ async fn get_user_tracked_numbers_details(
     // set database, relation and filter for tracking data
     let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
         db.collection("tracking_data");
-    let filter = doc! {"number": { "$in": &user_tracked_numbers }};
+    let filter = doc! {"data.number": { "$in": &user_tracked_numbers }};
 
     // get every tracking numbers' details from the database
     let tracking_data_cursor = match collection_tracking_data.find(filter, None).await {
