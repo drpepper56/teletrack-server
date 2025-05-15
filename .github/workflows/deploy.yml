@@ -1,0 +1,40 @@
+name: Deploy to Heroku with Config Vars
+
+on:
+  push:
+    branches: [main] # Change to your production branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
+          heroku --version
+
+      - name: Set Heroku config vars
+        run: |
+          heroku config:set MONGODB_URI=$MONGODB_URI -a $HEROKU_APP_NAME
+          heroku config:set TRACK17_API_KEY=$TRACK17_API_KEY -a $HEROKU_APP_NAME
+          heroku config:set WEBHOOK_SECRET=$WEBHOOK_SECRET -a $HEROKU_APP_NAME
+          heroku config:set TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN -a $HEROKU_APP_NAME
+          heroku config:set SERVER_API_KEY=$SERVER_API_KEY -a $HEROKU_APP_NAME
+        env:
+          HEROKU_APP_NAME: ${{ secrets.HEROKU_APP_NAME }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          TRACK17_API_KEY: ${{ secrets.TRACK17_API_KEY }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SERVER_API_KEY: ${{ secrets.SERVER_API_KEY }}
+
+      - name: Deploy to Heroku
+        uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          buildpack: https://github.com/heroku/heroku-buildpack-multi.git
