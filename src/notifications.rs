@@ -2,8 +2,6 @@
     Cargo
 */
 
-use crate::my_structs::tracking_data_formats::tracking_data_html_form::tracking_data_HTML;
-
 use base64::Engine as _;
 use chrono::Utc;
 use teloxide::prelude::*;

@@ -230,7 +230,21 @@ async fn database_tracking_data_from_number(
     .unwrap()
     //
 }
-//
+
+/// GET user ID form user ID hash
+async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &str) -> i64 {
+    // get user id
+    let db = client.database("teletrack");
+    let collection_users: mongodb::Collection<User> = db.collection("user");
+    let filter = doc! {"user_id_hash": &user_id_hash};
+    match collection_users.find_one(filter.clone(), None).await {
+        Ok(Some(user)) => Ok(user.user_id),
+        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
+        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
+    }
+    .unwrap()
+    //
+}
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -498,6 +512,37 @@ async fn check_number_registered(
     }
 }
 
+// Simulate how the webhook does notifications, for single user only
+async fn simulate_webhook_notification_one_user(
+    client: web::Data<Client>,
+    data: web::Data<AppState>,
+    user_id: i64,
+    tracking_number: &str,
+) {
+    // get tracking info from database
+    let tracking_data = database_tracking_data_from_number(client.clone(), tracking_number).await;
+    //
+
+    // convert the tracking data to html format
+    let tracking_data_html = tracking_data.convert_to_HTML_form();
+
+    // build the message that will be displayed in the chat window and notification banner
+    // dump the description
+    let message = "Update on your order tracking: ".to_string()
+        + tracking_data_html.tracking_number.as_str()
+        + "\n"
+        + tracking_data_html
+            .latest_event
+            .description
+            .unwrap()
+            .as_str();
+
+    // me ne frega
+    let _ =
+        webhook::notify_of_tracking_event_update(data.clone(), user_id, &message, tracking_number)
+            .await;
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
@@ -690,40 +735,13 @@ async fn register_tracking_number(
     // simulate the webhook update if the tracking number was already registered
 
     // get user id
-    let collection_users: mongodb::Collection<User> = db.collection("user");
-    let filter = doc! {"user_id_hash": &user_id_hash};
-    let user_id = match collection_users.find_one(filter.clone(), None).await {
-        Ok(Some(user)) => Ok(user.user_id),
-        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
-        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
-    }
-    .unwrap();
-    //
+    let user_id = database_user_id_from_hash(client.clone(), &user_id_hash).await;
 
-    // get tracking info from database
-    let tracking_data =
-        database_tracking_data_from_number(client.clone(), &tracking_details.number).await;
-    //
-
-    // convert the tracking data to html format
-    let tracking_data_html = tracking_data.convert_to_HTML_form();
-
-    // build the message that will be displayed in the chat window and notification banner
-    // dump the description
-    let message = "Update on your order tracking: ".to_string()
-        + tracking_data_html.tracking_number.as_str()
-        + "\n"
-        + tracking_data_html
-            .latest_event
-            .description
-            .unwrap()
-            .as_str();
-
-    // me ne frega
-    let _ = webhook::notify_of_tracking_event_update(
+    // forge and send notification
+    simulate_webhook_notification_one_user(
+        client.clone(),
         data.clone(),
         user_id,
-        &message,
         &tracking_details.number,
     )
     .await;
