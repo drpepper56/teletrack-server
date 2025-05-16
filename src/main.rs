@@ -235,12 +235,19 @@ async fn database_tracking_data_from_number(
 async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &str) -> i64 {
     // get user id
     let db = client.database("teletrack");
-    let collection_users: mongodb::Collection<User> = db.collection("user");
+    let collection_users: mongodb::Collection<User> = db.collection("users");
     let filter = doc! {"user_id_hash": &user_id_hash};
-    match collection_users.find_one(filter.clone(), None).await {
+    println!("{}", user_id_hash);
+    match collection_users.find_one(filter, None).await {
         Ok(Some(user)) => Ok(user.user_id),
-        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
-        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
+        Ok(None) => {
+            println!("@DATABASE_USER_ID_FROM_HASH: user not found");
+            Err(HttpResponse::InternalServerError().body("user not found"))
+        }
+        Err(e) => {
+            println!("@DATABASE_USER_ID_FROM_HASH: database error: {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
     }
     .unwrap()
     //
