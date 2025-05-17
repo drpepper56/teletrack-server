@@ -34,6 +34,8 @@ pub enum tracking_error {
     InfoNotReady,
     #[error("tracking rejected")]
     GetTrackInfoError,
+    #[error("unable to find carrier, try a register with carrier")]
+    RetryTrackRegisterWithCarrier,
     #[error("failed to fetch the tracking info from the api for your number")]
     TrackingRejected,
     #[error("number can't be re-tracked since it's being actively tracked")]
@@ -152,6 +154,10 @@ impl tracking_client {
                             println!("number is already tracked on the API");
                             return Err(tracking_error::TrackingAlreadyRegistered);
                             // resolve the error in references
+                        }
+                        -18019903 => {
+                            println!("unable to find carrier, try a register with carrier");
+                            Err(tracking_error::RetryTrackRegisterWithCarrier)
                         }
                         -18010013 => {
                             // invalid data format sent to the API

@@ -2,22 +2,16 @@ use crate::{
     main,
     my_structs::tracking_data_formats::{
         tracking_data_database_form::TrackingData_DBF as tracking_data_database_form,
-        tracking_data_html_form::tracking_data_HTML,
         tracking_data_webhook_update::{
             PackageDataWebhook, TrackingData, TrackingResponse as webhook_update,
         },
     },
-    notifications, AppState,
+    AppState,
 };
-use actix_web::{body, post, web, FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
-use chrono::{format, Utc};
+use actix_web::{post, web, HttpRequest, HttpResponse, Responder};
 use futures::{StreamExt, TryStreamExt};
 use hex::encode;
-use mongodb::{
-    bson::{de, doc},
-    options::{ClientOptions, FindOneAndUpdateOptions, FindOptions},
-    Client,
-};
+use mongodb::{bson::doc, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -317,11 +311,11 @@ async fn send_notifications_to_users(
     .await
 }
 
-/// Function to create the client info update payload to put in the notification
-
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     WEBHOOK
+
+    TODO: handle stopped update
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */

@@ -237,17 +237,10 @@ async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &st
     let db = client.database("teletrack");
     let collection_users: mongodb::Collection<User> = db.collection("users");
     let filter = doc! {"user_id_hash": &user_id_hash};
-    println!("{}", user_id_hash);
     match collection_users.find_one(filter, None).await {
         Ok(Some(user)) => Ok(user.user_id),
-        Ok(None) => {
-            println!("@DATABASE_USER_ID_FROM_HASH: user not found");
-            Err(HttpResponse::InternalServerError().body("user not found"))
-        }
-        Err(e) => {
-            println!("@DATABASE_USER_ID_FROM_HASH: database error: {}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
-        }
+        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
+        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
     }
     .unwrap()
     //
@@ -258,6 +251,8 @@ async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &st
     UTILITY FUNCTIONS
     TODO: function
     TODO: get the values for database and collection from one constant instead of writing them in each function
+    TODO: move some logic to database functions
+
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
@@ -554,9 +549,8 @@ async fn simulate_webhook_notification_one_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
-    TODO: every function should check the hashed user ID and check if the user has permissions to do things on that number
     TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
-    TODO: do a sign hash verification on each request with a shared key before this is public
+    TODO: implement registering tracking numbers quota limit for users
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -660,6 +654,7 @@ async fn create_user_handler(
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
 // TODO: buy something that will be shipped long time (for testing :-)
 // TODO: add carrier search in a catch clause
+// TODO: implement registering tracking numbers quota limit for users
 async fn register_tracking_number(
     client: web::Data<Client>,
     data: web::Data<AppState>,
@@ -691,7 +686,13 @@ async fn register_tracking_number(
             // TODO: add carrier search in a catch clause
             println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
             Err(HttpResponse::InternalServerError()
-                .body(serde_json::json!({"error":"tracking number not found"}).to_string()))
+                .body(serde_json::json!({"error":tracking_error::TrackingNumberNotFoundByAPI.to_string()}).to_string()))
+        }
+        // unable to find carrier, try again with specific carrier
+        Err(tracking_error::RetryTrackRegisterWithCarrier) => {
+            println!("@REGISTER_TRACKING_NUMBER: carrier not found, retry with specific carrier");
+            Err(HttpResponse::InternalServerError()
+                .body(serde_json::json!({"error":tracking_error::RetryTrackRegisterWithCarrier.to_string()}).to_string()))
         }
         // unexpected error
         Err(e) => {
@@ -1273,7 +1274,6 @@ async fn main() -> std::io::Result<()> {
     ));
     // TRACKING SERVICE
     let tracking_client = Arc::new(tracking_client::new());
-
     // SERVER
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -1317,8 +1317,8 @@ async fn main() -> std::io::Result<()> {
             .service(webhook::handle_webhook)
             // HTTPS receive
             // testing
-            .route("/write", web::post().to(write_to_db_test))
-            .route("/test_read", web::get().to(test_read))
+            // .route("/write", web::post().to(write_to_db_test))
+            // .route("/test_read", web::get().to(test_read))
             // prod
             .route("/create_user", web::post().to(create_user_handler))
             .route(

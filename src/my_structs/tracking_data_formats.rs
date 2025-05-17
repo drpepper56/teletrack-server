@@ -667,7 +667,6 @@ pub mod tracking_data_base {
 }
 
 /// form used to create html objects and send to the user
-// TODO: add functions that convert to HTML elements
 pub mod tracking_data_html_form {
     use crate::my_structs::tracking_data_formats::tracking_data_base;
     use serde::{Deserialize, Serialize};
