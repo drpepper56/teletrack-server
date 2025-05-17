@@ -549,79 +549,18 @@ async fn simulate_webhook_notification_one_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
-    TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
     TODO: implement registering tracking numbers quota limit for users
+
+    TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
+
+    list of custom 5XX codes:
+            520 - user doesn't exist yet, client should send request to create user
+    TODO:   521 - user already exists, handle error
+            530 - carrier not found, client should send a register number request that includes a carrier
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
-
-/// testing: write to db
-async fn write_to_db_test(
-    client: web::Data<Client>,
-    data: web::Json<TestingDataFormat>,
-    request: HttpRequest,
-) -> impl Responder {
-    // check if user exists
-    match check_user_exists(client.clone(), request).await {
-        // user exists, continue
-        Ok(user_id) => {
-            // start connection to DB
-            let db = client.database("testbase");
-            let collection: mongodb::Collection<TestingDataFormat> = db.collection("test");
-            let result = collection.insert_one(data.into_inner(), None).await;
-
-            match result {
-                Ok(_) => HttpResponse::Ok().body("write good"),
-                Err(e) => {
-                    eprintln!("write bad: {:?}", e);
-                    HttpResponse::InternalServerError().body("Failed to store data")
-                }
-            }
-        }
-        // user doesn't exist, respond with 520
-        Err(response) => response,
-    }
-}
-
-/// testing: reading from the database
-async fn test_read(client: web::Data<Client>, data: Json<TestingDataFormat>) -> impl Responder {
-    println!("reading from DB");
-
-    let db = client.database("testbase");
-    let collection: mongodb::Collection<TestingDataFormat> = db.collection("test");
-
-    // let filter: mongodb::bson::Document = doc! {};
-    let filter: mongodb::bson::Document = doc! {"key": data.into_inner().key}; // Corrected filter
-    let find_options = FindOptions::builder().limit(2).build();
-
-    let cursor = collection.find(filter, find_options).await;
-
-    match cursor {
-        Ok(mut cursor) => {
-            let mut results = Vec::new();
-            println!("mayb ey ou got it?");
-            while let Some(doc) = cursor.next().await {
-                match doc {
-                    Ok(data) => {
-                        println!("{:?}", data);
-                        results.push(data);
-                    }
-                    Err(e) => {
-                        println!("Error: {:?}", e);
-                        return HttpResponse::InternalServerError()
-                            .body("Failed to parse document");
-                    }
-                }
-            }
-            return HttpResponse::Ok().json(results);
-        }
-        Err(e) => {
-            println!("{}", e);
-            HttpResponse::InternalServerError().body("Failed to read data")
-        }
-    }
-}
 
 /// Function for responding to a client request to create a new user
 /// the header has to have the hashed user ID like the other function, and the raw user ID + name in the body of the function as a json
@@ -653,7 +592,6 @@ async fn create_user_handler(
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
 // TODO: buy something that will be shipped long time (for testing :-)
-// TODO: add carrier search in a catch clause
 // TODO: implement registering tracking numbers quota limit for users
 async fn register_tracking_number(
     client: web::Data<Client>,
@@ -683,7 +621,6 @@ async fn register_tracking_number(
         }
         // tracking number not found by the API
         Err(tracking_error::TrackingNumberNotFoundByAPI) => {
-            // TODO: add carrier search in a catch clause
             println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
             Err(HttpResponse::InternalServerError()
                 .body(serde_json::json!({"error":tracking_error::TrackingNumberNotFoundByAPI.to_string()}).to_string()))
@@ -691,8 +628,10 @@ async fn register_tracking_number(
         // unable to find carrier, try again with specific carrier
         Err(tracking_error::RetryTrackRegisterWithCarrier) => {
             println!("@REGISTER_TRACKING_NUMBER: carrier not found, retry with specific carrier");
-            Err(HttpResponse::InternalServerError()
-                .body(serde_json::json!({"error":tracking_error::RetryTrackRegisterWithCarrier.to_string()}).to_string()))
+            Err(HttpResponse::build(
+                StatusCode::from_u16(530).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .json(serde_json::json!({"expected error": "retry with carrier"})))
         }
         // unexpected error
         Err(e) => {
@@ -1311,14 +1250,9 @@ async fn main() -> std::io::Result<()> {
             /*
                 ROUTING
             */
-            // test the service
-            .service(web::resource("/").to(|| async { HttpResponse::Ok().body("Hello, World!") }))
             // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
             .service(webhook::handle_webhook)
             // HTTPS receive
-            // testing
-            // .route("/write", web::post().to(write_to_db_test))
-            // .route("/test_read", web::get().to(test_read))
             // prod
             .route("/create_user", web::post().to(create_user_handler))
             .route(
