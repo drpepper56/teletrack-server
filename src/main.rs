@@ -676,7 +676,7 @@ async fn register_tracking_number(
     .unwrap();
 
     if !was_registered {
-        HttpResponse::Ok().body("relation record inserted");
+        return HttpResponse::Ok().body("relation record inserted");
     }
     // simulate the webhook update if the tracking number was already registered
 
@@ -692,7 +692,7 @@ async fn register_tracking_number(
     )
     .await;
 
-    HttpResponse::Ok().body("relation record inserted")
+    return HttpResponse::Ok().body("relation record inserted");
 }
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that

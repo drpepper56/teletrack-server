@@ -698,6 +698,7 @@ pub mod tracking_data_html_form {
         pub time: Option<tracking_data_base::time_raw>,
     }
 }
+
 /// Custom format for storing in the database as a single tracking info
 pub mod tracking_data_database_form {
     use serde::{Deserialize, Serialize};
