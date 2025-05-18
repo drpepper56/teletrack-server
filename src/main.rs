@@ -613,33 +613,32 @@ async fn register_tracking_number(
     // the bool value is for knowing whether to pull the tracking info to simulate a webhook update for the user
     let was_registered = match register_single(data.clone(), tracking_details.clone()).await {
         // continue
-        Ok(_) => Ok(false),
+        Ok(_) => false,
         // tracking number was already registered, continue
         Err(tracking_error::TrackingAlreadyRegistered) => {
             println!("@REGISTER_TRACKING_NUMBER: tracking number already registered");
-            Ok(true) // it's okay if it's not registered+stopped on the API
+            true // it's okay if it's not registered+stopped on the API
         }
         // tracking number not found by the API
         Err(tracking_error::TrackingNumberNotFoundByAPI) => {
             println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
-            Err(HttpResponse::InternalServerError()
-                .body(serde_json::json!({"error":tracking_error::TrackingNumberNotFoundByAPI.to_string()}).to_string()))
+            return HttpResponse::InternalServerError()
+                .body(serde_json::json!({"error":tracking_error::TrackingNumberNotFoundByAPI.to_string()}).to_string());
         }
         // unable to find carrier, try again with specific carrier
         Err(tracking_error::RetryTrackRegisterWithCarrier) => {
             println!("@REGISTER_TRACKING_NUMBER: carrier not found, retry with specific carrier");
-            Err(HttpResponse::build(
+            return HttpResponse::build(
                 StatusCode::from_u16(530).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
-            .json(serde_json::json!({"expected error": "retry with carrier"})))
+            .json(serde_json::json!({"expected error": "retry with carrier"}));
         }
         // unexpected error
         Err(e) => {
             println!("@REGISTER_TRACKING_NUMBER:{}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // check if a duplicate of the relation record exists
