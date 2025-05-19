@@ -37,7 +37,7 @@ use notifications::{notification_service, notification_service_error};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{env, sync::Arc};
+use std::{env, string, sync::Arc};
 use trackingapi::{just_the_tracking_number, tracking_client, tracking_error};
 
 /*
@@ -550,7 +550,7 @@ async fn simulate_webhook_notification_one_user(
     ROUTING HANDLERS
 
     TODO: implement registering tracking numbers quota limit for users
-
+    TODO: make the http returns more consistent and explicit so that you don't get empty 500s as responses in the client
     TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
 
     list of custom 5XX codes:
@@ -757,12 +757,12 @@ async fn stop_tracking_number(
         // };
         //
 
-        HttpResponse::Ok()
-            .body("action successful, user won't be notified of updates to this tracking number ")
+        return HttpResponse::Ok()
+            .body("action successful, user won't be notified of updates to this tracking number ");
     } else {
         // not found (impossible)
         println!("found but not changed, was already set to false");
-        HttpResponse::InternalServerError().body("already not subscribed to that number")
+        return HttpResponse::InternalServerError().body("already not subscribed to that number");
     }
 }
 
@@ -1020,12 +1020,15 @@ async fn get_user_tracked_numbers_details(
     .unwrap();
     //
 
-    // convert the cursor to a list of tracking numbers that the user is tracking
-    let user_tracked_numbers: Vec<String> = match tracking_numbers_cursor
+    // convert the cursor to a list of tracking numbers, and user subscribed status that the user is tracking
+    let user_tracked_numbers_and_status: Vec<(String, bool)> = match tracking_numbers_cursor
         .try_collect::<Vec<TrackingNumberUserRelation>>()
         .await
     {
-        Ok(relations) => Ok(relations.into_iter().map(|r| r.tracking_number).collect()),
+        Ok(relations) => Ok(relations
+            .into_iter()
+            .map(|r| (r.tracking_number, r.is_subscribed))
+            .collect()),
         Err(e) => {
             println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
             Err(HttpResponse::InternalServerError().body(e.to_string()))
@@ -1037,7 +1040,8 @@ async fn get_user_tracked_numbers_details(
     // set database, relation and filter for tracking data
     let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
         db.collection("tracking_data");
-    let filter = doc! {"data.number": { "$in": &user_tracked_numbers }};
+    let filter = doc! {"data.number": { "$in":
+    &user_tracked_numbers_and_status.iter().map(|(number, _)| number).collect::<Vec<_>>() }};
 
     // get every tracking numbers' details from the database
     let tracking_data_cursor = match collection_tracking_data.find(filter, None).await {
@@ -1055,16 +1059,25 @@ async fn get_user_tracked_numbers_details(
         .try_collect::<Vec<tracking_data_database_form>>()
         .await
     {
-        Ok(relations) => Ok(relations
+        // convert the tracking data to HTML form and set the is_user_tracked value from the relation record
+        Ok(tracking_data_dbf) => tracking_data_dbf
             .into_iter()
-            .map(|r| r.convert_to_HTML_form())
-            .collect()),
+            .map(|pkg| {
+                let mut html_form = pkg.convert_to_HTML_form();
+                // Check if the user is tracking this number and get subscription status
+                html_form.is_user_tracked = user_tracked_numbers_and_status
+                    .iter()
+                    .find(|(tracking_num, _)| *tracking_num == html_form.tracking_number)
+                    .map(|(_, is_subscribed)| Some(*is_subscribed))
+                    .unwrap_or(Some(true)); // Default to false if not found
+                html_form
+            })
+            .collect(),
         Err(e) => {
             println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     HttpResponse::Ok().json(user_tracked_numbers_details)

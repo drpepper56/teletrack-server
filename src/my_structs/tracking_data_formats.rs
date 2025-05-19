@@ -492,6 +492,7 @@ pub mod tracking_data_webhook_update {
                     .map(|provider| provider.convert_to_HTML_provider())
                     .collect(),
                 time_metrics: Some(self.track_info.time_metrics.clone()),
+                is_user_tracked: None,
             }
         }
     }
@@ -678,6 +679,7 @@ pub mod tracking_data_html_form {
         pub latest_event: event,
         pub providers_data: Vec<tracking_provider_provided_events>,
         pub time_metrics: Option<tracking_data_base::time_metrics>,
+        pub is_user_tracked: Option<bool>,
     }
 
     // case where multiple providers kms
@@ -724,6 +726,7 @@ pub mod tracking_data_database_form {
                     .map(|provider| provider.convert_to_HTML_provider())
                     .collect(),
                 time_metrics: Some(self.data.track_info.time_metrics.clone()),
+                is_user_tracked: None,
             }
         }
     }
