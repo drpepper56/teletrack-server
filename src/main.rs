@@ -279,10 +279,8 @@ async fn database_delivered_status(client: web::Data<Client>, tracking_number: &
     //
 
     if latest_status == "Delivered" {
-        println!("the package has been marked delivered");
         return true;
     } else {
-        println!("the package has not been marked delivered");
         return false;
     }
 }
