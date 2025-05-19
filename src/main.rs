@@ -246,12 +246,75 @@ async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &st
     //
 }
 
+/// GET delivered bool from tracking number
+async fn database_delivered_status(client: web::Data<Client>, tracking_number: &str) -> bool {
+    // set database, relation and filter for getting tracking data
+    let db = client.database("teletrack");
+    let collection_tracking_data: mongodb::Collection<tracking_data_database_form> =
+        db.collection("tracking_data");
+    let filter = doc! {"data.number": &tracking_number};
+
+    // get the tracking data from the database
+    let query_result = match collection_tracking_data.find_one(filter, None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!(
+                "@DATABASE_DELIVERED_STATUS: error getting tracking data from db: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // open the result
+    let latest_status = match query_result {
+        Some(tracking_data) => &tracking_data.data.track_info.latest_status.status.unwrap(),
+        None => {
+            println!("tracking data not found for the client query");
+            return false;
+        }
+    };
+    //
+
+    if latest_status == "Delivered" {
+        println!("the package has been marked delivered");
+        return true;
+    } else {
+        println!("the package has not been marked delivered");
+        return false;
+    }
+}
+
+/// GET delivered bool from tracking_data_database_form
+fn database_delivered_status_from_DBF(tracking_data_dbf: tracking_data_database_form) -> bool {
+    // open the result
+    match tracking_data_dbf.data.track_info.latest_status.status {
+        Some(latest_status) => {
+            if latest_status == "Delivered" {
+                println!("the package has been marked delivered");
+                return true;
+            } else {
+                println!("the package has not been marked delivered");
+                return false;
+            }
+        }
+        None => {
+            println!("value not set");
+            return false;
+        }
+    };
+    //
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     UTILITY FUNCTIONS
     TODO: function
     TODO: get the values for database and collection from one constant instead of writing them in each function
     TODO: move some logic to database functions
+    TODO: add function for converting to html format which sets the is_user_tracked value based on latest status then relation record
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -356,6 +419,7 @@ async fn create_user(
 }
 
 /// Function to check if the user has a relation to the tracking number in the database
+// TODO: TEST and merge ->
 async fn check_relation(
     client: web::Data<Client>,
     tracking_number: &str,
@@ -375,6 +439,37 @@ async fn check_relation(
             "@PERMISSION_GRANTED: relation record found, subscribed: {}",
             relation_record.is_subscribed
         ))
+    } else if let Ok(None) = permission_check {
+        println!("@NO_PERMISSION: relation record not found");
+        Err(HttpResponse::InternalServerError()
+            .body("user doesn't have access to that tracking number."))
+    } else if let Err(e) = permission_check {
+        println!("database error {}", e);
+        Err(HttpResponse::InternalServerError().body(e.to_string()))
+    } else {
+        Err(HttpResponse::InternalServerError().body("error when checking permissions"))
+    }
+    //
+}
+
+/// Function to check if the user has a relation to the tracking number in the database and return subscribed status
+// TODO: TEST and merge <-
+async fn check_relation_and_subscribed_status(
+    client: web::Data<Client>,
+    tracking_number: &str,
+    user_id_hash: &str,
+) -> Result<bool, HttpResponse> {
+    // set database
+    let db = client.database("teletrack");
+    // set collection
+    let collection_relations: mongodb::Collection<TrackingNumberUserRelation> =
+        db.collection("tracking_number_user_relation");
+    // set search filter
+    let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
+    // find the relation record in the database
+    let permission_check = collection_relations.find_one(filter.clone(), None).await;
+    if let Ok(Some(relation_record)) = permission_check {
+        Ok(relation_record.is_subscribed)
     } else if let Ok(None) = permission_check {
         println!("@NO_PERMISSION: relation record not found");
         Err(HttpResponse::InternalServerError()
@@ -553,10 +648,17 @@ async fn simulate_webhook_notification_one_user(
     TODO: make the http returns more consistent and explicit so that you don't get empty 500s as responses in the client
     TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
 
+    TODO: make an enum of the custom error codes and use them in the code
+
     list of custom 5XX codes:
             520 - user doesn't exist yet, client should send request to create user
     TODO:   521 - user already exists, handle error
+    TODO:   525 - user doesn't have access to that number, no relation record found
             530 - carrier not found, client should send a register number request that includes a carrier
+            533 - package has been marked delivered so it can't be re-tracked
+            534 - already set to subscribed
+            535 - already set to unsubscribed
+            536 - no relation record found to delete
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -575,16 +677,16 @@ async fn create_user_handler(
         // user already exists
         Ok(user_id) => {
             println!("user already exists");
-            HttpResponse::build(
+            return HttpResponse::build(
                 StatusCode::from_u16(521).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             )
-            .json(serde_json::json!({"unexpected error": "user already exists"}))
+            .json(serde_json::json!({"unexpected error": "user already exists"}));
         }
 
         // user doesn't exist yet
         Err(response) => match create_user(client.clone(), data.into_inner()).await {
-            Ok(_) => HttpResponse::Ok().body("user created"),
-            Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+            Ok(_) => return HttpResponse::Ok().body("user created"),
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
         },
     }
 }
@@ -602,11 +704,10 @@ async fn register_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     // register the tracking number with the API, throws error
@@ -666,14 +767,13 @@ async fn register_tracking_number(
     {
         Ok(_) => {
             println!("relation record inserted");
-            Ok(())
+            ()
         }
         Err(response) => {
             println!("error inserting relation record");
-            Err(response)
+            return response;
         }
-    }
-    .unwrap();
+    };
 
     if !was_registered {
         return HttpResponse::Ok().body("relation record inserted");
@@ -706,11 +806,10 @@ async fn stop_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
@@ -731,14 +830,13 @@ async fn stop_tracking_number(
         .update_one(filter, database_update, None)
         .await
     {
-        Ok(result) => Ok(result),
+        Ok(result) => result,
         // database error
         Err(e) => {
             println!("{}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // resolve the response from the database, it's a bit weird here
@@ -760,9 +858,10 @@ async fn stop_tracking_number(
         return HttpResponse::Ok()
             .body("action successful, user won't be notified of updates to this tracking number ");
     } else {
-        // not found (impossible)
-        println!("found but not changed, was already set to false");
-        return HttpResponse::InternalServerError().body("already not subscribed to that number");
+        return HttpResponse::build(
+            StatusCode::from_u16(535).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "already unsubscribed"}));
     }
 }
 
@@ -777,11 +876,10 @@ async fn retrack_stopped_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
@@ -794,16 +892,15 @@ async fn retrack_stopped_number(
     // get the data about this number from the API
     let number_status =
         match check_number_status_single(data.clone(), tracking_number.clone()).await {
-            Ok(number_status) => Ok(number_status),
+            Ok(number_status) => number_status,
             Err(e) => {
                 println!(
                     "@RETRACK_STOPPED_NUMBER: error getting the number status data: {}",
                     e
                 );
-                Err(e)
+                return HttpResponse::InternalServerError().body(e.to_string());
             }
-        }
-        .unwrap();
+        };
     //
 
     // get the important tracking and status information to check
@@ -813,8 +910,10 @@ async fn retrack_stopped_number(
     // if the package has been delivered do not update the subscribe value in the database
     if package_status == "Delivered" {
         println!("the package has been marked delivered and there won't be ant new updates");
-        return HttpResponse::Ok()
-            .body("number cannot be subscribed to because the package has been marked as delivered and there won't be new updates");
+        return HttpResponse::build(
+            StatusCode::from_u16(533).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "delivered packages can't be re-tracked"}));
     }
     //
 
@@ -828,22 +927,13 @@ async fn retrack_stopped_number(
         .update_one(filter, database_update, None)
         .await
     {
-        Ok(result) => Ok(result),
+        Ok(result) => result,
         // database error
         Err(e) => {
             println!("{}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
-    //
-
-    // resolve the response from the database, return response if user was already subscribed
-    if update_result.modified_count.clone() == 0 {
-        println!("found but not changed, was already set to true");
-        return HttpResponse::InternalServerError().body("already subscribed to that number");
-    }
-    println!("successfully subscribed to a number by the user");
+    };
     //
 
     // activate it if it's stopped and not yet delivered
@@ -851,14 +941,24 @@ async fn retrack_stopped_number(
         match retrack_stopped_number_single(data.clone(), tracking_number).await {
             Ok(_) => {
                 println!("number has been re-tracked on the API");
-                Ok(())
+                ()
             }
             Err(e) => {
                 println!("@RETRACK_STOPPED_NUMBER: error re-tracking_number: {},", e);
-                Err(HttpResponse::InternalServerError().body("the number you are trying to retrack has been retracked before and cant be retracked again."))
+                return HttpResponse::InternalServerError().body("the number you are trying to retrack has been retracked before and cant be retracked again.");
             }
-        }.unwrap();
+        };
     }
+    //
+
+    // resolve the response from the database, return response if user was already subscribed
+    if update_result.modified_count.clone() == 0 {
+        return HttpResponse::build(
+            StatusCode::from_u16(534).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "already subscribed"}));
+    }
+    println!("successfully subscribed to a number by the user");
     //
 
     HttpResponse::Ok()
@@ -876,11 +976,10 @@ async fn delete_tracking_number(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
@@ -898,14 +997,13 @@ async fn delete_tracking_number(
     // send request to the DB to remove the relation record
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     let update_result = match collection_relations.delete_one(filter, None).await {
-        Ok(update_result) => Ok(update_result),
+        Ok(update_result) => update_result,
         // database error
         Err(e) => {
             println!("{}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // resolve the delete response from the database
@@ -914,15 +1012,13 @@ async fn delete_tracking_number(
 
         // check if there are any other relation docs with that number
         let filter = doc! {"tracking_number": &tracking_number};
-        let other_relations_count =
-            match collection_relations.count_documents(filter, None).await {
-                Ok(res) => Ok(res),
-                Err(e) => {
-                    println!("{}", e);
-                    Err(HttpResponse::InternalServerError().body(e.to_string()))
-                }
+        let other_relations_count = match collection_relations.count_documents(filter, None).await {
+            Ok(res) => res,
+            Err(e) => {
+                println!("{}", e);
+                return HttpResponse::InternalServerError().body(e.to_string());
             }
-            .unwrap();
+        };
         //
 
         // check the response from the database and delete the number from the API register if there are none
@@ -941,11 +1037,14 @@ async fn delete_tracking_number(
             // };
         }
 
-        HttpResponse::Ok().finish() // professionalism
+        return HttpResponse::Ok().finish(); // professionalism
     } else {
         // didn't delete
         println!("didn't delete the relation record because nothing was found");
-        HttpResponse::InternalServerError().body("didn't delete")
+        return HttpResponse::build(
+            StatusCode::from_u16(536).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "no relation record found to delete"}));
     }
 }
 
@@ -960,19 +1059,19 @@ async fn get_tracking_data_from_database(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     let tracking_number = tracking_data.into_inner().number.clone();
 
-    // check if the user has permission for that number, also checks if the number is registered
-    check_relation(client.clone(), &tracking_number, &user_id_hash)
-        .await
-        .unwrap();
+    // check if the user has permission for that number, also checks if the number is registered and gets the subscribed value
+    let is_user_tracked =
+        check_relation_and_subscribed_status(client.clone(), &tracking_number, &user_id_hash)
+            .await
+            .unwrap();
     //
 
     // get the tracking data from database
@@ -980,7 +1079,19 @@ async fn get_tracking_data_from_database(
     //
 
     // convert the tracking data to the HTML form
-    let tracking_data_html = tracking_data.convert_to_HTML_form();
+    let mut tracking_data_html = tracking_data.convert_to_HTML_form();
+
+    // set the is_user_tracked value
+    match database_delivered_status(client, &tracking_number).await {
+        true => {
+            tracking_data_html.is_user_tracked = Some(false);
+            println!("package has been marked delivered");
+        }
+        false => {
+            tracking_data_html.is_user_tracked = Some(is_user_tracked);
+            println!("package has not been marked delivered");
+        }
+    }
 
     HttpResponse::Ok().body(serde_json::to_string(&tracking_data_html).unwrap())
 }
@@ -994,11 +1105,10 @@ async fn get_user_tracked_numbers_details(
     // check if user exists
     let user_id_hash = match check_user_exists(client.clone(), request).await {
         // continue
-        Ok(user_id) => Ok(user_id),
+        Ok(user_id) => user_id,
         // user doesn't exist, respond with 520
-        Err(response) => Err(response),
-    }
-    .unwrap();
+        Err(response) => return response,
+    };
     //
 
     // set database, relation and filter
@@ -1011,13 +1121,12 @@ async fn get_user_tracked_numbers_details(
 
     // get a result of a search for all the user's tracked numbers
     let tracking_numbers_cursor = match collection_relations.find(filter.clone(), None).await {
-        Ok(query_result) => Ok(query_result),
+        Ok(query_result) => query_result,
         Err(e) => {
             println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // convert the cursor to a list of tracking numbers, and user subscribed status that the user is tracking
@@ -1025,16 +1134,15 @@ async fn get_user_tracked_numbers_details(
         .try_collect::<Vec<TrackingNumberUserRelation>>()
         .await
     {
-        Ok(relations) => Ok(relations
+        Ok(relations) => relations
             .into_iter()
             .map(|r| (r.tracking_number, r.is_subscribed))
-            .collect()),
+            .collect(),
         Err(e) => {
             println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // set database, relation and filter for tracking data
@@ -1045,13 +1153,12 @@ async fn get_user_tracked_numbers_details(
 
     // get every tracking numbers' details from the database
     let tracking_data_cursor = match collection_tracking_data.find(filter, None).await {
-        Ok(query_result) => Ok(query_result),
+        Ok(query_result) => query_result,
         Err(e) => {
             println!("@GET_USER_TRACKED_NUMBERS_DETAILS: {}", e);
-            Err(HttpResponse::InternalServerError().body(e.to_string()))
+            return HttpResponse::InternalServerError().body(e.to_string());
         }
-    }
-    .unwrap();
+    };
     //
 
     // convert the cursor to a vector of tracking data HTML form
@@ -1063,14 +1170,21 @@ async fn get_user_tracked_numbers_details(
         Ok(tracking_data_dbf) => tracking_data_dbf
             .into_iter()
             .map(|pkg| {
-                let mut html_form = pkg.convert_to_HTML_form();
+                let mut html_package_data_form = pkg.convert_to_HTML_form();
                 // Check if the user is tracking this number and get subscription status
-                html_form.is_user_tracked = user_tracked_numbers_and_status
-                    .iter()
-                    .find(|(tracking_num, _)| *tracking_num == html_form.tracking_number)
-                    .map(|(_, is_subscribed)| Some(*is_subscribed))
-                    .unwrap_or(Some(true)); // Default to false if not found
-                html_form
+                let is_user_tracked = match database_delivered_status_from_DBF(pkg.clone()) {
+                    // If package is delivered, not tracked regardless of subscription
+                    true => Some(false),
+                    // If not delivered, check if user is tracking it
+                    false => user_tracked_numbers_and_status
+                        .iter()
+                        .find(|(tracking_num, _)| {
+                            *tracking_num == html_package_data_form.tracking_number
+                        })
+                        .map(|(_, is_subscribed)| *is_subscribed),
+                };
+                html_package_data_form.is_user_tracked = is_user_tracked;
+                html_package_data_form
             })
             .collect(),
         Err(e) => {
