@@ -291,10 +291,8 @@ fn database_delivered_status_from_DBF(tracking_data_dbf: tracking_data_database_
     match tracking_data_dbf.data.track_info.latest_status.status {
         Some(latest_status) => {
             if latest_status == "Delivered" {
-                println!("the package has been marked delivered");
                 return true;
             } else {
-                println!("the package has not been marked delivered");
                 return false;
             }
         }
