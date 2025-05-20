@@ -42,6 +42,17 @@ use trackingapi::{just_the_tracking_number, tracking_client, tracking_error};
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    Constants
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*/
+
+// default tracking quota for users
+const DEFAULT_TRACKING_QUOTA: i32 = 4;
+
+/*
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     Structs
     TODO: put in another file
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -54,12 +65,13 @@ struct AppState {
     webhook_secret: String,
 }
 
-/// User structure
+/// User structure for database
 #[derive(Debug, Deserialize, Serialize)]
-struct User {
+struct UserDatabaseForm {
     user_id: i64,
     user_id_hash: String,
     user_name: String,
+    remaining_tracking_quota: i32,
 }
 
 /// ERORRS
@@ -86,7 +98,7 @@ struct TestingDataFormat {
 
 // struct for getting user details from the client
 #[derive(Serialize, Deserialize, Debug)]
-struct UserDetails {
+struct UserDetailsFromClient {
     user_id: i64,
     user_name: String,
 }
@@ -235,7 +247,7 @@ async fn database_tracking_data_from_number(
 async fn database_user_id_from_hash(client: web::Data<Client>, user_id_hash: &str) -> i64 {
     // get user id
     let db = client.database("teletrack");
-    let collection_users: mongodb::Collection<User> = db.collection("users");
+    let collection_users: mongodb::Collection<UserDatabaseForm> = db.collection("users");
     let filter = doc! {"user_id_hash": &user_id_hash};
     match collection_users.find_one(filter, None).await {
         Ok(Some(user)) => Ok(user.user_id),
@@ -304,6 +316,53 @@ fn database_delivered_status_from_DBF(tracking_data_dbf: tracking_data_database_
     //
 }
 
+/// GET remaining tracking quota from user ID hash
+async fn database_quota_from_hash(client: web::Data<Client>, user_id_hash: &str) -> i32 {
+    // get user id
+    let db = client.database("teletrack");
+    let collection_users: mongodb::Collection<UserDatabaseForm> = db.collection("users");
+    let filter = doc! {"user_id_hash": &user_id_hash};
+    match collection_users.find_one(filter, None).await {
+        Ok(Some(user)) => Ok(user.remaining_tracking_quota),
+        Ok(None) => Err(HttpResponse::InternalServerError().body("user not found")),
+        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
+    }
+    .unwrap()
+    //
+}
+
+/// DECREMENT the remaining tracking quota for a user by 1 from user id hash
+async fn database_decrement_user_quota(client: web::Data<Client>, user_id_hash: &str) -> bool {
+    // set database, relation and filter for getting tracking data
+    let db = client.database("teletrack");
+    let collection_user_data: mongodb::Collection<UserDatabaseForm> = db.collection("users");
+    let filter = doc! {"user_id_hash": &user_id_hash};
+    let update = doc! {"$inc": {"remaining_tracking_quota": -1}};
+
+    // get the user data from the database
+    let query_result = match collection_user_data.update_one(filter, update, None).await {
+        Ok(query_result) => Ok(query_result),
+        Err(e) => {
+            println!(
+                "@DATABASE_DECREMENT_USER_QUOTA: error getting tracking data from db: {}",
+                e
+            );
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
+    }
+    .unwrap();
+    //
+
+    // open the result
+    if query_result.modified_count > 0 {
+        println!("user quota decremented");
+        return true;
+    } else {
+        println!("user quota not decremented");
+        return false;
+    }
+}
+
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     UTILITY FUNCTIONS
@@ -347,7 +406,7 @@ async fn check_user_exists(
     // search for the user id hash and return the actual ID if found, send errors otherwise
     // println!("@CHECK_USER_EXISTS: verifying user now...");
     let db = client.database("teletrack");
-    let collection: mongodb::Collection<User> = db.collection("users");
+    let collection: mongodb::Collection<UserDatabaseForm> = db.collection("users");
     let filter = doc! {"user_id_hash": &user_id_hash};
     match collection.find_one(filter, None).await {
         Ok(Some(user)) => {
@@ -373,20 +432,21 @@ async fn check_user_exists(
 // TODO: add lock so this can't be accessed while another thread is running this function
 async fn create_user(
     client: web::Data<Client>,
-    user_details: UserDetails,
+    user_details: UserDetailsFromClient,
 ) -> Result<bool, UserCheckError> {
     println!("@CREATE_USER: creating user now...");
 
     let db = client.database("teletrack");
-    let collection: mongodb::Collection<User> = db.collection("users");
+    let collection: mongodb::Collection<UserDatabaseForm> = db.collection("users");
 
     // create the user document
-    let user = User {
+    let user = UserDatabaseForm {
         user_id: user_details.user_id.clone(),
         user_id_hash: encode(Sha256::digest(
             user_details.user_id.abs().to_string().as_bytes(),
         )),
         user_name: user_details.user_name,
+        remaining_tracking_quota: DEFAULT_TRACKING_QUOTA,
     };
 
     // check if the user exists already
@@ -655,6 +715,8 @@ async fn simulate_webhook_notification_one_user(
             534 - already set to subscribed
             535 - already set to unsubscribed
             536 - no relation record found to delete
+    TODO:   540 - tracking quota reached limit, sorry
+    TODO:   541 - relation record already exists
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -665,7 +727,7 @@ async fn simulate_webhook_notification_one_user(
 async fn create_user_handler(
     client: web::Data<Client>,
     request: HttpRequest,
-    data: Json<UserDetails>,
+    data: Json<UserDetailsFromClient>,
 ) -> impl Responder {
     // if it aint broke dont fix it
     // again check if user exists already
@@ -704,6 +766,17 @@ async fn register_tracking_number(
         // user doesn't exist, respond with 520
         Err(response) => return response,
     };
+    //
+
+    // check if the user has reached the tracking quota limit
+    let user_quota = database_quota_from_hash(client.clone(), &user_id_hash).await;
+    if user_quota <= 0 {
+        println!("@REGISTER_TRACKING_NUMBER: user has reached the tracking quota limit");
+        return HttpResponse::build(
+            StatusCode::from_u16(540).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "user has reached the tracking quota limit"}));
+    }
     //
 
     // register the tracking number with the API, throws error
@@ -749,7 +822,10 @@ async fn register_tracking_number(
         return HttpResponse::Ok().body("OK");
     } else if let Err(e) = duplicate_relation_search {
         println!("database error: {}", e);
-        return HttpResponse::InternalServerError().body(e.to_string());
+        return HttpResponse::build(
+            StatusCode::from_u16(541).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "relation record already exists"}));
     }
     //
 
@@ -772,7 +848,9 @@ async fn register_tracking_number(
     };
 
     if !was_registered {
-        return HttpResponse::Ok().body("relation record inserted");
+        // decrement the user quota
+        let _ = database_decrement_user_quota(client.clone(), &user_id_hash).await;
+        return HttpResponse::Ok().body("registered tracking number");
     }
     // simulate the webhook update if the tracking number was already registered
 
@@ -788,7 +866,7 @@ async fn register_tracking_number(
     )
     .await;
 
-    return HttpResponse::Ok().body("relation record inserted");
+    return HttpResponse::Ok().body("registered tracking number");
 }
 
 /// Function for stopping the tracking of a single number, this will pause the updates sent to the webhook, check if any other user is subscribed to that
