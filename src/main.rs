@@ -715,8 +715,8 @@ async fn simulate_webhook_notification_one_user(
             534 - already set to subscribed
             535 - already set to unsubscribed
             536 - no relation record found to delete
-    TODO:   540 - tracking quota reached limit, sorry
-    TODO:   541 - relation record already exists
+            540 - tracking quota reached limit, sorry
+            541 - relation record already exists
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -819,7 +819,10 @@ async fn register_tracking_number(
     let duplicate_relation_search = collection_relations.find_one(filter.clone(), None).await;
     if let Ok(Some(_)) = duplicate_relation_search {
         println!("relation already exists");
-        return HttpResponse::Ok().body("OK");
+        return HttpResponse::build(
+            StatusCode::from_u16(541).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .json(serde_json::json!({"expected error": "relation record already exists"}));
     } else if let Err(e) = duplicate_relation_search {
         println!("database error: {}", e);
         return HttpResponse::build(
