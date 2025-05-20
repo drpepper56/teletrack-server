@@ -489,21 +489,18 @@ async fn check_relation(
     // set search filter
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     // find the relation record in the database
-    let permission_check = collection_relations.find_one(filter.clone(), None).await;
-    if let Ok(Some(relation_record)) = permission_check {
-        Ok(println!(
-            "@PERMISSION_GRANTED: relation record found, subscribed: {}",
-            relation_record.is_subscribed
-        ))
-    } else if let Ok(None) = permission_check {
-        println!("@NO_PERMISSION: relation record not found");
-        Err(HttpResponse::InternalServerError()
-            .body("user doesn't have access to that tracking number."))
-    } else if let Err(e) = permission_check {
-        println!("database error {}", e);
-        Err(HttpResponse::InternalServerError().body(e.to_string()))
-    } else {
-        Err(HttpResponse::InternalServerError().body("error when checking permissions"))
+    match collection_relations.find_one(filter.clone(), None).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => {
+            println!("@NO_PERMISSION: relation record not found");
+            Err(HttpResponse::build(
+                StatusCode::from_u16(525).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            ).json(serde_json::json!({"expected error": "user doesn't have access to that tracking number"})))
+        }
+        Err(e) => {
+            println!("database error {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
     }
     //
 }
@@ -523,18 +520,18 @@ async fn check_relation_and_subscribed_status(
     // set search filter
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
     // find the relation record in the database
-    let permission_check = collection_relations.find_one(filter.clone(), None).await;
-    if let Ok(Some(relation_record)) = permission_check {
-        Ok(relation_record.is_subscribed)
-    } else if let Ok(None) = permission_check {
-        println!("@NO_PERMISSION: relation record not found");
-        Err(HttpResponse::InternalServerError()
-            .body("user doesn't have access to that tracking number."))
-    } else if let Err(e) = permission_check {
-        println!("database error {}", e);
-        Err(HttpResponse::InternalServerError().body(e.to_string()))
-    } else {
-        Err(HttpResponse::InternalServerError().body("error when checking permissions"))
+    match collection_relations.find_one(filter.clone(), None).await {
+        Ok(Some(relation_record)) => Ok(relation_record.is_subscribed),
+        Ok(None) => {
+            println!("@NO_PERMISSION: relation record not found");
+            Err(HttpResponse::build(
+                StatusCode::from_u16(525).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            ).json(serde_json::json!({"expected error": "user doesn't have access to that tracking number"})))
+        }
+        Err(e) => {
+            println!("database error {}", e);
+            Err(HttpResponse::InternalServerError().body(e.to_string()))
+        }
     }
     //
 }
@@ -700,11 +697,9 @@ async fn simulate_webhook_notification_one_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
-    TODO: implement registering tracking numbers quota limit for users
-    TODO: make the http returns more consistent and explicit so that you don't get empty 500s as responses in the client
     TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
 
-    TODO: make an enum of the custom error codes and use them in the code
+    TODO: make an enum of the custom error codes
 
     list of custom 5XX codes:
             520 - user doesn't exist yet, client should send request to create user
@@ -752,7 +747,6 @@ async fn create_user_handler(
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
 // TODO: buy something that will be shipped long time (for testing :-)
-// TODO: implement registering tracking numbers quota limit for users
 async fn register_tracking_number(
     client: web::Data<Client>,
     data: web::Data<AppState>,
@@ -825,10 +819,7 @@ async fn register_tracking_number(
         .json(serde_json::json!({"expected error": "relation record already exists"}));
     } else if let Err(e) = duplicate_relation_search {
         println!("database error: {}", e);
-        return HttpResponse::build(
-            StatusCode::from_u16(541).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-        )
-        .json(serde_json::json!({"expected error": "relation record already exists"}));
+        return HttpResponse::InternalServerError().body(e.to_string());
     }
     //
 
