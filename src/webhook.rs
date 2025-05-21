@@ -316,15 +316,15 @@ async fn send_notifications_to_users(
     WEBHOOK
 
     TODO: handle stopped update
+    TODO: modify the message to make the bot pull the telegram cloud stored tag and inject it in the message on the mark
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
 /*
-    Since the miniapp is some hot garbage and it doesn't have any sensible way to transport a payload
-    through their notification (which would be really nice), we keep cheating them by sending more than
-    one parameters just out of spite (send the tracking number that will open the client tracking page
-    directly), the way the client will get the tracking data is through a https request
+    Since the miniapp doesn't have any way to transport a payload through their notification (which would be really nice),
+    send more than one parameters (send the tracking number that will open the client tracking page directly), the way
+    the client will get the tracking data is through a https request
 */
 
 #[post("/webhook_17track")]
@@ -341,7 +341,7 @@ pub async fn handle_webhook(
     };
 
     // println!("webhook received payload and extracted");
-    // print the whole boomboclat thing
+    // print the whole thing
     // println!("  {:?}", payload);
     // println!("  {:?}", payload.event);
 

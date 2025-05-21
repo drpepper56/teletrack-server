@@ -888,9 +888,10 @@ async fn stop_tracking_number(
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash)
-        .await
-        .unwrap();
+    match check_relation(client.clone(), &tracking_number, &user_id_hash).await {
+        Ok(_) => (),
+        Err(result) => return result,
+    }
 
     // send request to the DB to change the is_subscribed value to false
     let database_update = doc! {"$set":{"is_subscribed": false}};
@@ -953,9 +954,10 @@ async fn retrack_stopped_number(
     let tracking_number = tracking_data.into_inner().number.clone();
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash)
-        .await
-        .unwrap();
+    match check_relation(client.clone(), &tracking_number, &user_id_hash).await {
+        Ok(_) => (),
+        Err(result) => return result,
+    }
 
     // get the data about this number from the API
     let number_status =
@@ -1057,10 +1059,10 @@ async fn delete_tracking_number(
         db.collection("tracking_number_user_relation");
 
     // check if the user has permission for that number
-    check_relation(client.clone(), &tracking_number, &user_id_hash)
-        .await
-        .unwrap();
-    //
+    match check_relation(client.clone(), &tracking_number, &user_id_hash).await {
+        Ok(_) => (),
+        Err(result) => return result,
+    }
 
     // send request to the DB to remove the relation record
     let filter = doc! {"tracking_number": &tracking_number, "user_id_hash": &user_id_hash};
@@ -1137,9 +1139,14 @@ async fn get_tracking_data_from_database(
 
     // check if the user has permission for that number, also checks if the number is registered and gets the subscribed value
     let is_user_tracked =
-        check_relation_and_subscribed_status(client.clone(), &tracking_number, &user_id_hash)
+        match check_relation_and_subscribed_status(client.clone(), &tracking_number, &user_id_hash)
             .await
-            .unwrap();
+        {
+            Ok(status) => status,
+            Err(response) => {
+                return response;
+            }
+        };
     //
 
     // get the tracking data from database
