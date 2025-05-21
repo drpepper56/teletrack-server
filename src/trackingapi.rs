@@ -156,6 +156,7 @@ impl tracking_client {
                             // resolve the error in references
                         }
                         -18019903 => {
+                            // unable to detect carrier
                             println!("unable to find carrier, try a register with carrier");
                             Err(tracking_error::RetryTrackRegisterWithCarrier)
                         }
@@ -169,7 +170,7 @@ impl tracking_client {
                                 "number register error: {:?}",
                                 response_data.data.rejected[0]
                             );
-                            return Err(tracking_error::TrackingRejected);
+                            return Err(tracking_error::TrackingNumberNotFoundByAPI);
                         }
                     }
                 } else {

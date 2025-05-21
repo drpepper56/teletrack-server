@@ -141,9 +141,6 @@ async fn register_single(
     let tracking_client = data.tracking_client.clone();
     match tracking_client.register_tracking(tracking_details).await {
         Ok(data) => Ok(data),
-        Err(tracking_error::TrackingNumberNotFoundByAPI) => {
-            Err(tracking_error::TrackingNumberNotFoundByAPI)
-        }
         Err(e) => Err(e),
     }
 }
@@ -706,6 +703,7 @@ async fn simulate_webhook_notification_one_user(
     TODO:   521 - user already exists, handle error
     TODO:   525 - user doesn't have access to that number, no relation record found
             530 - carrier not found, client should send a register number request that includes a carrier
+            531 - tracking number was not found by the API when trying to register it
             533 - package has been marked delivered so it can't be re-tracked
             534 - already set to subscribed
             535 - already set to unsubscribed
@@ -786,8 +784,10 @@ async fn register_tracking_number(
         // tracking number not found by the API
         Err(tracking_error::TrackingNumberNotFoundByAPI) => {
             println!("@REGISTER_TRACKING_NUMBER: tracking number not found");
-            return HttpResponse::InternalServerError()
-                .body(serde_json::json!({"error":tracking_error::TrackingNumberNotFoundByAPI.to_string()}).to_string());
+            return HttpResponse::build(
+                StatusCode::from_u16(531).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .json(serde_json::json!({"expected error": "not found"}));
         }
         // unable to find carrier, try again with specific carrier
         Err(tracking_error::RetryTrackRegisterWithCarrier) => {
