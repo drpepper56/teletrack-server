@@ -1440,7 +1440,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_origin("https://telegram.org") // Telegram web app origin
                     .allowed_origin("https://webhook.lemoncardboard.uk")
                     .allowed_origin("https://teletrack-twa-1b3480c228a6.herokuapp.com") // Heroku origin
-                    .allowed_origin("https://telegramtrack.lemoncardboard.com") // DNS origin
+                    .allowed_origin("https://telegramtrack.lemoncardboard.uk") // DNS origin
                     .allowed_methods(vec!["GET", "POST", "OPTIONS"])
                     .allowed_headers(vec!["X-User-ID-Hash", "Content-Type", "Authorization"])
                     .expose_headers(vec!["X-User-ID-Hash"])
