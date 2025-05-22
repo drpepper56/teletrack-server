@@ -694,14 +694,12 @@ async fn simulate_webhook_notification_one_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ROUTING HANDLERS
 
-    TODO: figure out good 5XX error code responses for different types of errors so they can be handled client side with no body
-
     TODO: make an enum of the custom error codes
 
     list of custom 5XX codes:
             520 - user doesn't exist yet, client should send request to create user
     TODO:   521 - user already exists, handle error
-    TODO:   525 - user doesn't have access to that number, no relation record found
+            525 - user doesn't have access to that number, no relation record found
             530 - carrier not found, client should send a register number request that includes a carrier
             531 - tracking number was not found by the API when trying to register it
             533 - package has been marked delivered so it can't be re-tracked
@@ -1442,6 +1440,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_origin("https://telegram.org") // Telegram web app origin
                     .allowed_origin("https://webhook.lemoncardboard.uk")
                     .allowed_origin("https://teletrack-twa-1b3480c228a6.herokuapp.com") // Heroku origin
+                    .allowed_origin("https://telegramtrack.lemoncardboard.com") // DNS origin
                     .allowed_methods(vec!["GET", "POST", "OPTIONS"])
                     .allowed_headers(vec!["X-User-ID-Hash", "Content-Type", "Authorization"])
                     .expose_headers(vec!["X-User-ID-Hash"])
@@ -1451,7 +1450,7 @@ async fn main() -> std::io::Result<()> {
             /*
                 ROUTING
             */
-            // HTTPS webhook for recieving updates //TODO: add the hash verification when it's time to do security
+            // HTTPS webhook for receiving updates
             .service(webhook::handle_webhook)
             // HTTPS receive
             // prod
