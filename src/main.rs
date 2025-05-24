@@ -53,8 +53,11 @@ const DEFAULT_TRACKING_QUOTA: i32 = 4;
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
     Structs
     TODO: put in another file
+    TODO: remove first name from storage
+
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
@@ -695,6 +698,7 @@ async fn simulate_webhook_notification_one_user(
     ROUTING HANDLERS
 
     TODO: make an enum of the custom error codes
+    TODO: remove user from database and on a route
 
     list of custom 5XX codes:
             520 - user doesn't exist yet, client should send request to create user

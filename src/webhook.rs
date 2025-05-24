@@ -368,17 +368,17 @@ pub async fn handle_webhook(
         )
         .await
         {
-            Ok(user_ids) => Ok(user_ids),
+            Ok(user_ids) => user_ids,
             Err(response) => {
                 println!("failed to get user ID from the tracking number of the update");
-                Err(response)
+                return response;
             }
-        }
-        .unwrap();
+        };
         //
 
         if user_ids_to_notify.len() == 0 {
-            println!("no user to notify")
+            println!("no user to notify");
+            return HttpResponse::Ok().finish();
         }
 
         // build the message that will be displayed in the chat window and notification banner
