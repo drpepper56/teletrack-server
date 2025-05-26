@@ -61,7 +61,7 @@ struct user {
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
-/// this function will send an update to the Bot API in telegram that will (hopefully) show a popup notification through the
+/// this function will send an update to the Bot API in telegram that will show a popup notification through the
 /// telegram environment and pass the data to be resolved in the mini app
 pub async fn notify_of_tracking_event_update(
     data: web::Data<AppState>,
@@ -103,7 +103,7 @@ async fn get_raw_body_as_string(body: web::Bytes) -> Result<String, webhook_erro
     }
 }
 
-/// Function to verify 17Crack origin
+/// Function to verify 17Track origin
 async fn verify_origin_body(
     data: web::Data<crate::AppState>,
     request: HttpRequest,
@@ -147,12 +147,6 @@ async fn verify_origin_body(
         return Err(HttpResponse::BadRequest().finish());
     }
     //
-
-    // // print all headers
-    // println!("Received headers:");
-    // for (name, value) in request.headers().iter() {
-    //     println!("  {}: {:?}", name, value);
-    // }
 
     // extract the webhook_update struct from the body bytes
     match serde_json::from_str::<webhook_update>(&body_string) {
@@ -221,7 +215,7 @@ async fn refresh_tracking_info_from_webhook_update(
 }
 
 /// Function to get all users related to the tracking number from the database
-// TODO: faf around and find out @$lookup doc joint search actual SQL
+// TODO: @$lookup doc joint search actual SQL
 async fn get_user_ids_related_to_tracking_number(
     client: web::Data<Client>,
     tracking_number: String,
@@ -316,7 +310,7 @@ async fn send_notifications_to_users(
     WEBHOOK
 
     TODO: handle stopped update
-    TODO: modify the message to make the bot pull the telegram cloud stored tag and inject it in the message on the mark
+    TODO: modify the message to make the bot pull the telegram cloud stored tag and inject it in the message somewhere
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -378,6 +372,7 @@ pub async fn handle_webhook(
 
         if user_ids_to_notify.len() == 0 {
             println!("no user to notify");
+            // return early, giving an empty list to the later functions causes a webhook timeout
             return HttpResponse::Ok().finish();
         }
 

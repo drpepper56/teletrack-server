@@ -20,6 +20,7 @@ use std::env;
 */
 
 // error messages
+// TODO: clean up
 #[derive(Debug, thiserror::Error)]
 pub enum tracking_error {
     #[error("unexpected error happened, check logs or run more verbose.")]

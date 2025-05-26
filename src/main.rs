@@ -56,7 +56,7 @@ const DEFAULT_TRACKING_QUOTA: i32 = 4;
 
     Structs
     TODO: put in another file
-    TODO: remove first name from storage
+    TODO: remove first name from database
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -201,8 +201,9 @@ async fn check_number_status_single(
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
     DATABASE FUNCTIONS
-    TODO: function
+
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
@@ -365,8 +366,8 @@ async fn database_decrement_user_quota(client: web::Data<Client>, user_id_hash: 
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
     UTILITY FUNCTIONS
-    TODO: function
     TODO: get the values for database and collection from one constant instead of writing them in each function
     TODO: move some logic to database functions
     TODO: add function for converting to html format which sets the is_user_tracked value based on latest status then relation record
@@ -374,9 +375,9 @@ async fn database_decrement_user_quota(client: web::Data<Client>, user_id_hash: 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
-/// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server can't send notifications right now
-/// respond with a status code 520:'User not found' which the client app should resolve by sending a UserID and Name of the user
-/// INCASE the userID hash exists on the database anything to do with saving tracking history or sending addressed notifications should proceed with the raw userID
+/// Check if the userID hash exists on the data base, if it doesn't it means the request came from a new user and the server
+/// can't send notifications right now, respond with a status code 520:'User not found' which the client app should resolve
+/// by sending a UserID and Name of the user
 async fn check_user_exists(
     client: web::Data<Client>,
     request: HttpRequest,
@@ -427,8 +428,8 @@ async fn check_user_exists(
     }
 }
 
-/// Create the user but before check again if the user already exists on the database, double check act as a guard in case this function is ever used in a context
-/// where it is not triggered by the predicted interaction
+/// Create the user but before check again if the user already exists on the database, double check act as a guard in case this
+/// function is ever used in a context where it is not triggered by the predicted interaction
 // TODO: add lock so this can't be accessed while another thread is running this function
 async fn create_user(
     client: web::Data<Client>,
@@ -475,7 +476,7 @@ async fn create_user(
 }
 
 /// Function to check if the user has a relation to the tracking number in the database
-// TODO: TEST and merge ->
+// TODO: merge ->
 async fn check_relation(
     client: web::Data<Client>,
     tracking_number: &str,
@@ -506,7 +507,7 @@ async fn check_relation(
 }
 
 /// Function to check if the user has a relation to the tracking number in the database and return subscribed status
-// TODO: TEST and merge <-
+// TODO: merge <-
 async fn check_relation_and_subscribed_status(
     client: web::Data<Client>,
     tracking_number: &str,
@@ -698,7 +699,7 @@ async fn simulate_webhook_notification_one_user(
     ROUTING HANDLERS
 
     TODO: make an enum of the custom error codes
-    TODO: remove user from database and on a route
+    TODO: route to remove user from database
 
     list of custom 5XX codes:
             520 - user doesn't exist yet, client should send request to create user
@@ -1174,7 +1175,7 @@ async fn get_tracking_data_from_database(
 }
 
 /// Function for responding to a user request for all their tracked numbers' tracking details and events
-// TODO: faf around and find out @$lookup doc joint search actual SQL
+// TODO: @$lookup doc joint search actual SQL
 async fn get_user_tracked_numbers_details(
     client: web::Data<Client>, // for db
     request: HttpRequest,      // user in here
@@ -1194,7 +1195,7 @@ async fn get_user_tracked_numbers_details(
         db.collection("tracking_number_user_relation");
     let filter = doc! {"user_id_hash": &user_id_hash};
 
-    // TODO: faf around and find out @$lookup doc joint search actual SQL
+    // TODO: @$lookup doc joint search actual SQL
 
     // get a result of a search for all the user's tracked numbers
     let tracking_numbers_cursor = match collection_relations.find(filter.clone(), None).await {

@@ -64,33 +64,26 @@ impl notification_service {
         &self,
         user_id: i64,
         message: &str,
-        // optional parameters
         tracking_number_that_was_updated: &str,
     ) -> Result<(), notification_service_error> {
         // build the deep link with the struct parameters
-        // telegram rejects all parameters other than the start parameter (source: DeepSeek) so in order to send the other parameters
-        // they need to be all put in a json and encoded and put as a string as the start parameter (can change later to sending a link to DB parameters)
+        // telegram rejects all parameters other than the start parameter so in order to send the other parameters they
+        // need to be all put in a json and encoded and put as a string as the start parameter
+
+        // prepare the startparam
         let mut parameter_map = serde_json::Map::new();
         parameter_map.insert(
             "notification_id".to_string(),
             serde_json::json!(Utc::now().timestamp()),
         );
-
-        // bismallah
         parameter_map.insert(
             "package_update".to_string(),
             serde_json::json!(tracking_number_that_was_updated),
         );
-
-        // println!("{\"event\":\"shipment\",\"data\":{\"tracking_number\":\"123ABC\",\"status\":\"delivered\"}}");
-
-        println!("{:?}", parameter_map);
-
         let startapp_value = base64::engine::general_purpose::URL_SAFE
             .encode(serde_json::Value::Object(parameter_map).to_string());
 
-        // println!("{}", startapp_value);
-
+        // deep link to open the app from the notification message button, includes the startparam
         let deep_link = format!(
             "https://t.me/{}/{}?startapp={}",
             self.bot.get_me().await?.username(),
@@ -100,9 +93,7 @@ impl notification_service {
 
         // println!("{}", deep_link);
 
-        // create the keyboard that can (and will) throw errors
         let keyboard = self.create_inline_keyboard(&deep_link)?;
-        // send itttt
         match self
             .bot
             .send_message(ChatId(user_id), message)
@@ -113,24 +104,5 @@ impl notification_service {
             Ok(_) => Ok(()),
             Err(e) => Err(notification_service_error::TelegramError(e)),
         }
-    }
-
-    // silent notification
-    // lack of keyboard here could be the cause of future errors
-    pub async fn send_silent_update(&self, user_id: i64) -> Result<(), notification_service_error> {
-        // build the deep link with the struct parameters
-        let deep_link = format!(
-            "https://t.me/{}/{}?startapp=update_{}",
-            self.bot.get_me().await?.username(),
-            self.mini_app_name,
-            Utc::now().timestamp()
-        );
-        // send the update
-        self.bot
-            .send_message(ChatId(user_id), "You have updates!")
-            .disable_notification(true) // Silent notification
-            .await?;
-
-        Ok(())
     }
 }
