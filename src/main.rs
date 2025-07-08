@@ -1275,6 +1275,47 @@ async fn get_user_tracked_numbers_details(
     HttpResponse::Ok().json(user_tracked_numbers_details)
 }
 
+/// Function for pulling data of a number from the API and saving in the database
+/// (for testing purposes mostly)
+async fn pull_data_from_API(
+    client: web::Data<Client>,
+    data: web::Data<AppState>,
+    tracking_data: Json<just_the_tracking_number>,
+    request: HttpRequest, // user in here
+) -> impl Responder {
+    // check if user exists
+    let user_id_hash = match check_user_exists(client.clone(), request).await {
+        // continue
+        Ok(user_id) => user_id,
+        // user doesn't exist, respond with 520
+        Err(response) => return response,
+    };
+
+    // get from request tracking number
+    let tracking_number = tracking_data.into_inner().number.clone();
+
+    // check if the user has permission for that number
+    match check_relation(client.clone(), &tracking_number, &user_id_hash).await {
+        Ok(_) => (),
+        Err(result) => return result,
+    }
+
+    // send request to the API for tracking data and put it in the database
+    match refresh_and_return_tracking_data(client.clone(), data.clone(), tracking_number.clone())
+        .await
+    {
+        Ok(tracking_data_dbf) => {
+            println!("tracking data pulled from API and saved to database");
+            // convert the tracking data to HTML form
+            let tracking_data_html = tracking_data_dbf.convert_to_HTML_form();
+            // return the HTML form to the user
+            return HttpResponse::Ok().body(serde_json::to_string(&tracking_data_html).unwrap());
+        }
+        Err(response) => {
+            return response;
+        }
+    }
+}
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     PREFLIGHT OPTIONS HANDLERS FOR ROUTING HANDLERS
@@ -1394,6 +1435,20 @@ async fn get_user_tracked_numbers_details_options() -> impl Responder {
         ))
         .finish()
 }
+#[options("/pull_data_from_API")]
+async fn pull_data_from_API_options() -> impl Responder {
+    HttpResponse::NoContent()
+        .insert_header((
+            "Access-Control-Allow-Origin",
+            "https://teletrack-twa-1b3480c228a6.herokuapp.com",
+        ))
+        .insert_header(("Access-Control-Allow-Methods", "POST, OPTIONS"))
+        .insert_header((
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-User-ID-Hash",
+        ))
+        .finish()
+}
 
 /*
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1484,6 +1539,7 @@ async fn main() -> std::io::Result<()> {
                 "get_user_tracked_numbers_details",
                 web::post().to(get_user_tracked_numbers_details),
             )
+            .route("/pull_data_from_API", web::post().to(pull_data_from_API))
             // HTTPS preflight OPTIONS for test_write
             .service(write_options)
             .service(create_user_options)
@@ -1493,6 +1549,7 @@ async fn main() -> std::io::Result<()> {
             .service(delete_tracking_number_options)
             .service(get_tracking_data_options)
             .service(get_user_tracked_numbers_details_options)
+            .service(pull_data_from_API_options)
     })
     // .bind(("127.0.0.1", 8080))?
     .bind(("0.0.0.0", port))? // bxind to all interfaces and the dynamic port
