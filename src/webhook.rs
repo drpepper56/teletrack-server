@@ -334,10 +334,10 @@ pub async fn handle_webhook(
         Err(e) => return e,
     };
 
-    // println!("webhook received payload and extracted");
-    // print the whole thing
-    // println!("  {:?}", payload);
-    // println!("  {:?}", payload.event);
+    println!("webhook received payload and extracted");
+    print the whole thing
+    println!("  {:?}", payload);
+    println!("  {:?}", payload.event);
 
     /*
         Split to two paths based on the enum value of PackageData
