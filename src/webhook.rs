@@ -335,7 +335,7 @@ pub async fn handle_webhook(
     };
 
     println!("webhook received payload and extracted");
-    print the whole thing
+    // print the whole thing
     println!("  {:?}", payload);
     println!("  {:?}", payload.event);
 
