@@ -328,16 +328,19 @@ pub async fn handle_webhook(
     request: HttpRequest,
     body: web::Bytes,
 ) -> impl Responder {
+    // print the payload for debugging
+    println!("webhook received request: {:?}", body);
+
     // check the sign to verify it's from the api
     let payload = match verify_origin_body(data.clone(), request.clone(), body.clone()).await {
         Ok(payload) => payload,
         Err(e) => return e,
     };
 
-    println!("webhook received payload and extracted");
-    // print the whole thing
-    println!("  {:?}", payload);
-    println!("  {:?}", payload.event);
+    // println!("webhook received payload and extracted");
+    // // print the whole thing
+    // println!("  {:?}", payload);
+    // println!("  {:?}", payload.event);
 
     /*
         Split to two paths based on the enum value of PackageData
