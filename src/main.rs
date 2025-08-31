@@ -718,6 +718,8 @@ async fn simulate_webhook_notification_one_user(
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 */
 
+// CREATE USER
+
 /// Function for responding to a client request to create a new user
 /// the header has to have the hashed user ID like the other function, and the raw user ID + name in the body of the function as a json
 async fn create_user_handler(
@@ -744,6 +746,8 @@ async fn create_user_handler(
         },
     }
 }
+
+// REGISTER NUMBER
 
 /// Function for handling client call to register a tracking number on the API, the number will be tested and if necessary the carrier will have to be provided
 /// by the user, the number will be saved with the users hashed ID in a structure like {code, user_id_hashed, package_data}
@@ -1038,6 +1042,8 @@ async fn retrack_stopped_number(
         .body("action successful, user will be notified of updates to this tracking number ")
 }
 
+// DELETE TRACKING
+
 /// Function for deleting tracking numbers from the database and from the API, this function's primary function is deleting the user-number record deletion
 /// and the secondary function is checking if there are any other users recorded for that number, if not, delete it on the API
 async fn delete_tracking_number(
@@ -1098,16 +1104,16 @@ async fn delete_tracking_number(
         if other_relations_count == 0 {
             println!("delete from API would happen here but its been disabled for now");
             //TODO: put this back in later
-            // let _ = match delete_number_single(data.clone(), tracking_number).await {
-            //     Ok(_) => {
-            //         println!("number has been deleted on the API");
-            //         Ok(())
-            //     }
-            //     Err(e) => {
-            //         println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
-            //         Err(e)
-            //     }
-            // };
+            let _ = match delete_number_single(data.clone(), tracking_number).await {
+                Ok(_) => {
+                    println!("number has been deleted on the API");
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("@DELETE_TRACKING_NUMBER: error deleting_number: {},", e);
+                    Err(e)
+                }
+            };
         }
 
         return HttpResponse::Ok().finish(); // professionalism
